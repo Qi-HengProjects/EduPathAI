@@ -1,0 +1,18 @@
+package com.example.edupathai.data
+
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.storage.Storage
+
+object SupabaseProvider {
+    val client: SupabaseClient = createSupabaseClient(
+        supabaseUrl = "https://YOUR_SUPABASE_URL.supabase.co",
+        supabaseKey = "YOUR_SUPABASE_ANON_KEY",
+    ) {
+        install(Postgrest)
+        install(Auth)
+        install(Storage)
+    }
+}
