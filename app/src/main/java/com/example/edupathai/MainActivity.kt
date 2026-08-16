@@ -17,6 +17,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.edupathai.ui.chatbox.ChatHistoryScreen
+import com.example.edupathai.ui.chatbox.ChatScreen
+import com.example.edupathai.ui.chatbox.ChatViewModel
 import com.example.edupathai.ui.navigation.AdaptiveAppScaffold
 import com.example.edupathai.ui.notes.NoteDetailViewModel
 import com.example.edupathai.ui.notes.NotebookWorkspaceScreen
@@ -105,6 +108,75 @@ fun EduPathNavHost() {
 
             composable("daily_timeline") {
                 DailyTimelineScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // Module 2: AI Chatbot & Conversation History Engine
+
+            composable("chat_home") {
+                val chatViewModel = viewModel<ChatViewModel>(
+                    key = "chat_home",
+                    factory = object : ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            return ChatViewModel(initialSessionId = null) as T
+                        }
+                    }
+                )
+
+                ChatScreen(
+                    viewModel = chatViewModel,
+                    onNavigateToHistory = { navController.navigate("chat_history") }
+                )
+            }
+
+            composable("chat_history") {
+                ChatHistoryScreen(
+                    onSessionClick = { sessionId, title ->
+                        val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
+                        navController.navigate("chat_session/$sessionId?title=$encodedTitle")
+                    },
+                    onStartNewChat = {
+                        // Pop chat_home off the stack so a fresh ViewModel (blank conversation) is created.
+                        navController.navigate("chat_home") {
+                            popUpTo("chat_home") { inclusive = true }
+                        }
+                    },
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = "chat_session/{sessionId}?title={title}",
+                arguments = listOf(
+                    navArgument("sessionId") { type = NavType.StringType },
+                    navArgument("title") {
+                        type = NavType.StringType
+                        defaultValue = "Chat"
+                    }
+                )
+            ) { backStackEntry ->
+                val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
+                val rawTitle = backStackEntry.arguments?.getString("title") ?: "Chat"
+                val sessionTitle = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
+
+                val sessionViewModel = viewModel<ChatViewModel>(
+                    key = sessionId,
+                    factory = object : ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            return ChatViewModel(
+                                initialSessionId = sessionId,
+                                initialSessionTitle = sessionTitle
+                            ) as T
+                        }
+                    }
+                )
+
+                ChatScreen(
+                    viewModel = sessionViewModel,
+                    onNavigateToHistory = { navController.navigate("chat_history") },
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

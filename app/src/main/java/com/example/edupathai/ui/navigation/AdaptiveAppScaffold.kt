@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -13,7 +14,8 @@ import androidx.compose.ui.unit.dp
 
 enum class AppDestination(val route: String, val title: String, val icon: ImageVector) {
     NOTEBOOKS("notes_directory", "Notebooks", Icons.Default.Folder),
-    TIMELINE("daily_timeline", "Timeline", Icons.Default.CalendarToday)
+    TIMELINE("daily_timeline", "Timeline", Icons.Default.CalendarToday),
+    CHAT("chat_home", "AI Chat", Icons.Default.SmartToy)
 }
 
 @Composable
@@ -41,8 +43,12 @@ fun AdaptiveAppScaffold(
                     contentColor = MaterialTheme.colorScheme.onBackground
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    AppDestination.values().forEach { destination ->
-                        val isSelected = currentRoute == destination.route
+                    AppDestination.entries.forEach { destination ->
+                        val isSelected = when (destination) {
+                            AppDestination.CHAT -> currentRoute?.startsWith("chat_") == true
+                            AppDestination.NOTEBOOKS -> currentRoute == "notes_directory" || currentRoute?.startsWith("notebook_workspace") == true
+                            AppDestination.TIMELINE -> currentRoute == "daily_timeline"
+                        }
                         NavigationRailItem(
                             selected = isSelected,
                             onClick = { onNavigateTo(destination.route) },
@@ -75,8 +81,12 @@ fun AdaptiveAppScaffold(
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
-                        AppDestination.values().forEach { destination ->
-                            val isSelected = currentRoute == destination.route
+                        AppDestination.entries.forEach { destination ->
+                            val isSelected = when (destination) {
+                                AppDestination.CHAT -> currentRoute?.startsWith("chat_") == true
+                                AppDestination.NOTEBOOKS -> currentRoute == "notes_directory" || currentRoute?.startsWith("notebook_workspace") == true
+                                AppDestination.TIMELINE -> currentRoute == "daily_timeline"
+                            }
                             NavigationBarItem(
                                 selected = isSelected,
                                 onClick = { onNavigateTo(destination.route) },

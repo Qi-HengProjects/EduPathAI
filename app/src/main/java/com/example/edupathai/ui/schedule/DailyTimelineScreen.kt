@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Timer
@@ -16,7 +17,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.core.graphics.toColorInt
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,7 +49,7 @@ fun DailyTimelineScreen(
                 title = { Text("Daily Timeline Planner", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -282,9 +285,9 @@ fun FocusTimerCard(
 
 @Composable
 fun EnergyBudgetBar(tasks: List<ScheduleTask>) {
-    val highEnergyCount = tasks.count { it.energyLevel == "high" && !it.isCompleted }
-    val medEnergyCount = tasks.count { it.energyLevel == "medium" && !it.isCompleted }
-    val lowEnergyCount = tasks.count { it.energyLevel == "low" && !it.isCompleted }
+    val highEnergyCount = tasks.count { (it.energyLevel == "high") && !it.isCompleted }
+    val medEnergyCount = tasks.count { (it.energyLevel == "medium") && !it.isCompleted }
+    val lowEnergyCount = tasks.count { (it.energyLevel == "low") && !it.isCompleted }
     val totalPending = highEnergyCount + medEnergyCount + lowEnergyCount
 
     Card(
@@ -388,7 +391,7 @@ fun TimelineTaskCard(
     val taskColor = remember(task.colorHex) {
         try {
             if (task.colorHex.isNotBlank() && task.colorHex.startsWith("#")) {
-                Color(android.graphics.Color.parseColor(task.colorHex))
+                Color(task.colorHex.toColorInt())
             } else {
                 Color(0xFF4E75FF)
             }

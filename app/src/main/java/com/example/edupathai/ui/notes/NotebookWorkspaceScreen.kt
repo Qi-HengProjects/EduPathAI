@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -55,7 +56,7 @@ fun NotebookWorkspaceScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -94,7 +95,7 @@ fun NotebookWorkspaceScreen(
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 }
 
-                AiPromptType.values().forEach { action ->
+                AiPromptType.entries.forEach { action ->
                     SuggestionChip(
                         onClick = { viewModel.runAiAction(action) },
                         label = { Text(action.title) },
@@ -261,7 +262,11 @@ fun NotebookDrawerContent(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = note.contentMarkdown.take(60).replace("\n", " ") + "...",
+                            text = if (note.contentMarkdown.length > 60) {
+                                note.contentMarkdown.take(60).replace("\n", " ") + "..."
+                            } else {
+                                note.contentMarkdown.replace("\n", " ")
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
