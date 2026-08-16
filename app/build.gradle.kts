@@ -29,25 +29,27 @@ android {
         // 2. Fetch keys from local.properties and inject them into BuildConfig
         val supabaseUrl = localProperties.getProperty("SUPABASE_URL") ?: ""
         val supabaseKey = localProperties.getProperty("SUPABASE_ANON_KEY") ?: ""
+        val geminiKey = localProperties.getProperty("GEMINI_API_KEY") ?: ""
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
     }
 
     buildTypes {
         release {
-            optimization {
-                enable = false
-            }
+            isMinifyEnabled = false
         }
     }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
+
     buildFeatures {
         compose = true
-        buildConfig = true // 3. Enable BuildConfig generation
+        buildConfig = true
     }
 }
 
@@ -62,21 +64,27 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
 
+    // Icons
+    implementation("androidx.compose.material:material-icons-extended")
+
     // 1. Navigation & ViewModel
     implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")
 
-    // 2. Supabase SDK (Auth, Database, Storage)
-    implementation(platform("io.github.jan-tennert.supabase:bom:3.0.1"))
+    // 2. Supabase SDK (Compatible with Ktor 2.3.x)
+    implementation(platform("io.github.jan-tennert.supabase:bom:2.6.1"))
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:gotrue-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
-    implementation("io.ktor:ktor-client-android:3.0.0")
 
-    // 3. Gemini AI SDK
+    // 3. Ktor Client Engine (2.3.12 matches Gemini SDK)
+    implementation("io.ktor:ktor-client-android:2.3.12")
+    implementation("io.ktor:ktor-client-core:2.3.12")
+
+    // 4. Gemini AI SDK
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
-    // 4. KotlinX Serialization
+    // 5. Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -85,8 +93,4 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
-
-    // 5.UI
-    implementation("androidx.compose.material:material-icons-extended:1.7.8")
-
 }

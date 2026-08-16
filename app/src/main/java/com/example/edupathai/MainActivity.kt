@@ -4,8 +4,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.Composable
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.edupathai.ui.notes.NoteDetailViewModel
+import com.example.edupathai.ui.notes.NotebookWorkspaceScreen
 import com.example.edupathai.ui.notes.NotesDirectoryScreen
+import com.example.edupathai.ui.schedule.DailyTimelineScreen
 import com.example.edupathai.ui.theme.EduPathAITheme
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -13,8 +28,71 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             EduPathAITheme {
-                NotesDirectoryScreen()
+                EduPathNavHost()
             }
+        }
+    }
+}
+
+@Composable
+fun EduPathNavHost() {
+    val navController = rememberNavController()
+
+    NavHost(
+        navController = navController,
+        startDestination = "notes_directory"
+    ) {
+        // Screen 6: Subject Folders Directory
+        // Inside EduPathNavHost in MainActivity.kt
+        composable("notes_directory") {
+            NotesDirectoryScreen(
+                onFolderClick = { folderId, subjectName ->
+                    val encodedName = URLEncoder.encode(subjectName, StandardCharsets.UTF_8.toString())
+                    navController.navigate("notebook_workspace/$folderId?subjectName=$encodedName")
+                },
+                onNavigateToTimeline = {
+                    navController.navigate("daily_timeline")
+                }
+            )
+        }
+
+        // Screen 7: Subject Notebook Workspace
+        composable(
+            route = "notebook_workspace/{folderId}?subjectName={subjectName}",
+            arguments = listOf(
+                navArgument("folderId") { type = NavType.StringType },
+                navArgument("subjectName") {
+                    type = NavType.StringType
+                    defaultValue = "Subject Notebook"
+                }
+            )
+        ) { backStackEntry ->
+            val folderId = backStackEntry.arguments?.getString("folderId") ?: return@composable
+            val rawSubjectName = backStackEntry.arguments?.getString("subjectName") ?: "Subject Notebook"
+            val subjectName = URLDecoder.decode(rawSubjectName, StandardCharsets.UTF_8.toString())
+
+            val workspaceViewModel = viewModel<NoteDetailViewModel>(
+                key = folderId,
+                factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return NoteDetailViewModel(folderId = folderId) as T
+                    }
+                }
+            )
+
+            NotebookWorkspaceScreen(
+                subjectName = subjectName,
+                viewModel = workspaceViewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // Screen 8: Daily Timeline Planner
+        composable("daily_timeline") {
+            DailyTimelineScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }
