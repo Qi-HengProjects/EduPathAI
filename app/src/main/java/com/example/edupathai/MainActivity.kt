@@ -4,15 +4,20 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.edupathai.ui.navigation.AdaptiveAppScaffold
 import com.example.edupathai.ui.notes.NoteDetailViewModel
 import com.example.edupathai.ui.notes.NotebookWorkspaceScreen
 import com.example.edupathai.ui.notes.NotesDirectoryScreen
@@ -37,62 +42,72 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun EduPathNavHost() {
     val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
 
-    NavHost(
-        navController = navController,
-        startDestination = "notes_directory"
-    ) {
-        // Screen 6: Subject Folders Directory
-        // Inside EduPathNavHost in MainActivity.kt
-        composable("notes_directory") {
-            NotesDirectoryScreen(
-                onFolderClick = { folderId, subjectName ->
-                    val encodedName = URLEncoder.encode(subjectName, StandardCharsets.UTF_8.toString())
-                    navController.navigate("notebook_workspace/$folderId?subjectName=$encodedName")
-                },
-                onNavigateToTimeline = {
-                    navController.navigate("daily_timeline")
-                }
-            )
+    AdaptiveAppScaffold(
+        currentRoute = currentRoute,
+        onNavigateTo = { route ->
+            navController.navigate(route) {
+                popUpTo("notes_directory") { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
         }
-
-        // Screen 7: Subject Notebook Workspace
-        composable(
-            route = "notebook_workspace/{folderId}?subjectName={subjectName}",
-            arguments = listOf(
-                navArgument("folderId") { type = NavType.StringType },
-                navArgument("subjectName") {
-                    type = NavType.StringType
-                    defaultValue = "Subject Notebook"
-                }
-            )
-        ) { backStackEntry ->
-            val folderId = backStackEntry.arguments?.getString("folderId") ?: return@composable
-            val rawSubjectName = backStackEntry.arguments?.getString("subjectName") ?: "Subject Notebook"
-            val subjectName = URLDecoder.decode(rawSubjectName, StandardCharsets.UTF_8.toString())
-
-            val workspaceViewModel = viewModel<NoteDetailViewModel>(
-                key = folderId,
-                factory = object : ViewModelProvider.Factory {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        return NoteDetailViewModel(folderId = folderId) as T
+    ) { paddingValues ->
+        NavHost(
+            navController = navController,
+            startDestination = "notes_directory",
+            modifier = Modifier.padding(paddingValues)
+        ) {
+            composable("notes_directory") {
+                NotesDirectoryScreen(
+                    onFolderClick = { folderId, subjectName ->
+                        val encodedName = URLEncoder.encode(subjectName, StandardCharsets.UTF_8.toString())
+                        navController.navigate("notebook_workspace/$folderId?subjectName=$encodedName")
+                    },
+                    onNavigateToTimeline = {
+                        navController.navigate("daily_timeline")
                     }
-                }
-            )
+                )
+            }
 
-            NotebookWorkspaceScreen(
-                subjectName = subjectName,
-                viewModel = workspaceViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+            composable(
+                route = "notebook_workspace/{folderId}?subjectName={subjectName}",
+                arguments = listOf(
+                    navArgument("folderId") { type = NavType.StringType },
+                    navArgument("subjectName") {
+                        type = NavType.StringType
+                        defaultValue = "Subject Notebook"
+                    }
+                )
+            ) { backStackEntry ->
+                val folderId = backStackEntry.arguments?.getString("folderId") ?: return@composable
+                val rawSubjectName = backStackEntry.arguments?.getString("subjectName") ?: "Subject Notebook"
+                val subjectName = URLDecoder.decode(rawSubjectName, StandardCharsets.UTF_8.toString())
 
-        // Screen 8: Daily Timeline Planner
-        composable("daily_timeline") {
-            DailyTimelineScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+                val workspaceViewModel = viewModel<NoteDetailViewModel>(
+                    key = folderId,
+                    factory = object : ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            return NoteDetailViewModel(folderId = folderId) as T
+                        }
+                    }
+                )
+
+                NotebookWorkspaceScreen(
+                    subjectName = subjectName,
+                    viewModel = workspaceViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable("daily_timeline") {
+                DailyTimelineScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }

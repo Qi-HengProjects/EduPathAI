@@ -9,16 +9,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.edupathai.data.ScheduleTask
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +36,9 @@ fun DailyTimelineScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+
+    val configuration = LocalConfiguration.current
+    val isWideScreen = configuration.screenWidthDp >= 600
 
     Scaffold(
         topBar = {
@@ -50,53 +61,87 @@ fun DailyTimelineScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
         ) {
-            // 1. ADHD Focus Timer Widget
-            FocusTimerCard(
-                isRunning = uiState.isTimerRunning,
-                secondsRemaining = uiState.timerSecondsRemaining,
-                activeTaskTitle = uiState.activeTimerTask?.title,
-                onStart = { viewModel.startFocusTimer() },
-                onPause = { viewModel.pauseFocusTimer() },
-                onReset = { viewModel.resetFocusTimer(25) }
-            )
+            if (isWideScreen) {
+                // Tablet / Landscape: Side-by-Side Dual Pane
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    // Left Pane: Fixed Focus Timer & Cognitive Budget
+                    Column(
+                        modifier = Modifier
+                            .weight(0.42f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        FocusTimerCard(
+                            isRunning = uiState.isTimerRunning,
+                            secondsRemaining = uiState.timerSecondsRemaining,
+                            activeTaskTitle = uiState.activeTimerTask?.title,
+                            onStart = { viewModel.startFocusTimer(uiState.activeTimerTask) },
+                            onPause = { viewModel.pauseFocusTimer() },
+                            onReset = { viewModel.resetFocusTimer(25) }
+                        )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                        EnergyBudgetBar(tasks = uiState.tasks)
+                    }
 
-            // 2. Timeline Header & Energy Budget Summary
-            EnergyBudgetBar(tasks = uiState.tasks)
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 3. Task Timeline List
-            if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (uiState.tasks.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No study blocks scheduled today.\nTap '+' to create one!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    VerticalDivider(
+                        modifier = Modifier.fillMaxHeight(),
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
+
+                    // Right Pane: Scrollable Tasks List
+                    Box(
+                        modifier = Modifier
+                            .weight(0.58f)
+                            .fillMaxHeight()
+                    ) {
+                        TimelineTaskList(
+                            uiState = uiState,
+                            onToggleComplete = { viewModel.toggleTaskCompletion(it) },
+                            onStartFocus = { viewModel.startFocusTimer(it) },
+                            onDelete = { it.id?.let { id -> viewModel.deleteTask(id) } }
+                        )
+                    }
                 }
             } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxSize()
+                // Phone Portrait: Single Column Stack
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(uiState.tasks, key = { it.id ?: it.title }) { task ->
-                        TimelineTaskCard(
-                            task = task,
-                            onToggleComplete = { viewModel.toggleTaskCompletion(task) },
-                            onStartFocus = { viewModel.startFocusTimer(task) },
-                            onDelete = { task.id?.let { viewModel.deleteTask(it) } }
+                    FocusTimerCard(
+                        isRunning = uiState.isTimerRunning,
+                        secondsRemaining = uiState.timerSecondsRemaining,
+                        activeTaskTitle = uiState.activeTimerTask?.title,
+                        onStart = { viewModel.startFocusTimer(uiState.activeTimerTask) },
+                        onPause = { viewModel.pauseFocusTimer() },
+                        onReset = { viewModel.resetFocusTimer(25) }
+                    )
+
+                    EnergyBudgetBar(tasks = uiState.tasks)
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        TimelineTaskList(
+                            uiState = uiState,
+                            onToggleComplete = { viewModel.toggleTaskCompletion(it) },
+                            onStartFocus = { viewModel.startFocusTimer(it) },
+                            onDelete = { it.id?.let { id -> viewModel.deleteTask(id) } }
                         )
                     }
                 }
@@ -116,6 +161,64 @@ fun DailyTimelineScreen(
 }
 
 @Composable
+fun TimelineTaskList(
+    uiState: ScheduleUiState,
+    onToggleComplete: (ScheduleTask) -> Unit,
+    onStartFocus: (ScheduleTask) -> Unit,
+    onDelete: (ScheduleTask) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    when {
+        uiState.isLoading -> {
+            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        uiState.tasks.isEmpty() -> {
+            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircleOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "No study blocks scheduled today.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Tap '+' to create your first block!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        }
+        else -> {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = modifier.fillMaxSize()
+            ) {
+                items(
+                    items = uiState.tasks,
+                    key = { it.id ?: it.title }
+                ) { task ->
+                    TimelineTaskCard(
+                        task = task,
+                        onToggleComplete = { onToggleComplete(task) },
+                        onStartFocus = { onStartFocus(task) },
+                        onDelete = { onDelete(task) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun FocusTimerCard(
     isRunning: Boolean,
     secondsRemaining: Int,
@@ -126,11 +229,13 @@ fun FocusTimerCard(
 ) {
     val minutes = secondsRemaining / 60
     val seconds = secondsRemaining % 60
-    val timeFormatted = String.format("%02d:%02d", minutes, seconds)
+    val timeFormatted = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
 
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -140,20 +245,22 @@ fun FocusTimerCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = activeTaskTitle ?: "Focus Session",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = timeFormatted,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(onClick = if (isRunning) onPause else onStart) {
                     Icon(
                         imageVector = if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -162,7 +269,11 @@ fun FocusTimerCard(
                     )
                 }
                 IconButton(onClick = onReset) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Reset Timer")
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Reset Timer",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -174,6 +285,7 @@ fun EnergyBudgetBar(tasks: List<ScheduleTask>) {
     val highEnergyCount = tasks.count { it.energyLevel == "high" && !it.isCompleted }
     val medEnergyCount = tasks.count { it.energyLevel == "medium" && !it.isCompleted }
     val lowEnergyCount = tasks.count { it.energyLevel == "low" && !it.isCompleted }
+    val totalPending = highEnergyCount + medEnergyCount + lowEnergyCount
 
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -192,20 +304,22 @@ fun EnergyBudgetBar(tasks: List<ScheduleTask>) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "⚡ Cognitive Load Budget",
+                    text = "⚡ Cognitive Load",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
                 )
                 Text(
-                    text = "${highEnergyCount + medEnergyCount + lowEnergyCount} pending",
+                    text = "$totalPending pending",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
                 )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 EnergyBadge(
                     label = "High",
@@ -271,17 +385,26 @@ fun TimelineTaskCard(
     onStartFocus: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val taskColor = try {
-        Color(android.graphics.Color.parseColor(task.colorHex))
-    } catch (e: Exception) {
-        MaterialTheme.colorScheme.primary
+    val taskColor = remember(task.colorHex) {
+        try {
+            if (task.colorHex.isNotBlank() && task.colorHex.startsWith("#")) {
+                Color(android.graphics.Color.parseColor(task.colorHex))
+            } else {
+                Color(0xFF4E75FF)
+            }
+        } catch (e: Exception) {
+            Color(0xFF4E75FF)
+        }
     }
 
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (task.isCompleted) MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
-            else MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (task.isCompleted) {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -291,7 +414,6 @@ fun TimelineTaskCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Visual Color Block Bar
             Box(
                 modifier = Modifier
                     .width(4.dp)
@@ -313,22 +435,34 @@ fun TimelineTaskCard(
                     text = task.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (task.description.isNotBlank()) {
                     Text(
                         text = task.description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
             IconButton(onClick = onStartFocus) {
-                Icon(Icons.Default.Timer, contentDescription = "Focus", tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = Icons.Outlined.Timer,
+                    contentDescription = "Focus",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline)
+                Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.outline
+                )
             }
         }
     }
@@ -361,7 +495,11 @@ fun AddTaskDialog(
                     label = { Text("Description / Notes") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("Energy Level required:", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = "Energy Level required:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("low", "medium", "high").forEach { level ->
                         FilterChip(
@@ -377,8 +515,11 @@ fun AddTaskDialog(
             Button(
                 onClick = {
                     if (title.isNotBlank()) {
-                        val now = "2026-08-16T10:00:00Z"
-                        val later = "2026-08-16T11:00:00Z"
+                        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }
+                        val now = sdf.format(Date())
+                        val later = sdf.format(Date(System.currentTimeMillis() + 3600000))
                         val colorHex = when (energyLevel) {
                             "high" -> "#FF7675"
                             "medium" -> "#6C5CE7"
