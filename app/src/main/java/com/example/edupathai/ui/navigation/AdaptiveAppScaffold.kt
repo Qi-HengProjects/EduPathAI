@@ -13,9 +13,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 
 enum class AppDestination(val route: String, val title: String, val icon: ImageVector) {
+    CHAT("chat_home", "AI Chat", Icons.Default.SmartToy),
     NOTEBOOKS("notes_directory", "Notebooks", Icons.Default.Folder),
-    TIMELINE("daily_timeline", "Timeline", Icons.Default.CalendarToday),
-    CHAT("chat_home", "AI Chat", Icons.Default.SmartToy)
+    TIMELINE("daily_timeline", "Timeline", Icons.Default.CalendarToday)
 }
 
 @Composable

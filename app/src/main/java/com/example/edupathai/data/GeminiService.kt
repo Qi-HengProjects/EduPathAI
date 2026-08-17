@@ -85,7 +85,7 @@ class GeminiService {
             )
 
             val chatHistory = history.map { message ->
-                content(role = if (message.sender == "user") "user" else "model") {
+                content(role = if (message.role == "user") "user" else "model") {
                     text(message.content)
                 }
             }

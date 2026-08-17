@@ -52,7 +52,11 @@ fun VoiceInputButton(
 
     fun startListening() {
         if (speechRecognizer == null) {
-            onError("Voice input isn't available on this device.")
+            onError(
+                "Speech recognition isn't available on this device. " +
+                        "Make sure Google app / Speech Services by Google is installed and up to date " +
+                        "(on an emulator, use one with the Google Play Store, not a bare AOSP image)."
+            )
             return
         }
 
@@ -77,22 +81,18 @@ fun VoiceInputButton(
 
             override fun onError(error: Int) {
                 isListening = false
+                // ERROR_NO_MATCH / ERROR_SPEECH_TIMEOUT just mean "heard silence" - not worth surfacing.
+                if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    return
+                }
                 val message = when (error) {
-                    SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                    SpeechRecognizer.ERROR_CLIENT -> "Client side error"
-                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Insufficient permissions"
-                    SpeechRecognizer.ERROR_NETWORK -> "Network error"
-                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-                    SpeechRecognizer.ERROR_NO_MATCH -> "No speech recognized"
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy"
-                    SpeechRecognizer.ERROR_SERVER -> "Server error"
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
-                    else -> "Unknown error"
+                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is required for voice input."
+                    SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Voice input needs an internet connection."
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Voice input is still finishing up - try again in a moment."
+                    SpeechRecognizer.ERROR_CLIENT -> "Voice input was cancelled. Try again."
+                    else -> "Voice input error (code $error). Please try again."
                 }
-                
-                if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    onError("Voice input error: $message (code $error).")
-                }
+                onError(message)
             }
 
             override fun onResults(results: Bundle?) {

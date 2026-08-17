@@ -46,6 +46,9 @@ fun ChatScreen(
     }
 
     Scaffold(
+        // Only reserve the status-bar/top inset here; bottom is handled below with
+        // navigationBars.union(ime) so keyboard height and gesture-bar height don't stack.
+        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Top),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -74,8 +77,9 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .imePadding()
-                .navigationBarsPadding()
+                // Bottom padding = whichever is taller right now: the gesture-nav bar (keyboard
+                // closed) or the keyboard (keyboard open) - never both added together.
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
         ) {
             Box(
                 modifier = Modifier
@@ -100,7 +104,7 @@ fun ChatScreen(
                         ) {
                             items(
                                 items = uiState.messages,
-                                key = { message -> message.id ?: "${message.sender}-${message.createdAt}-${message.content.hashCode()}" }
+                                key = { message -> message.id ?: "${message.role}-${message.createdAt}-${message.content.hashCode()}" }
                             ) { message ->
                                 ChatBubble(message = message)
                             }
@@ -156,7 +160,7 @@ private fun ChatEmptyState(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ChatBubble(message: ChatMessage) {
-    val isUser = message.sender == "user"
+    val isUser = message.role == "user"
 
     Row(
         modifier = Modifier.fillMaxWidth(),

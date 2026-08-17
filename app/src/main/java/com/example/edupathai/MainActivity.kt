@@ -4,10 +4,17 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,6 +49,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EduPathNavHost() {
     val navController = rememberNavController()
@@ -58,10 +66,25 @@ fun EduPathNavHost() {
             }
         }
     ) { paddingValues ->
+        // While the keyboard is up, don't also reserve space for the bottom tab bar underneath
+        // it - that reserved-but-now-hidden strip is exactly the gap above the keyboard.
+        val imeVisible = WindowInsets.isImeVisible
+        val layoutDirection = LocalLayoutDirection.current
+        val navHostPadding = if (imeVisible) {
+            androidx.compose.foundation.layout.PaddingValues(
+                start = paddingValues.calculateStartPadding(layoutDirection),
+                top = paddingValues.calculateTopPadding(),
+                end = paddingValues.calculateEndPadding(layoutDirection),
+                bottom = 0.dp
+            )
+        } else {
+            paddingValues
+        }
+
         NavHost(
             navController = navController,
             startDestination = "notes_directory",
-            modifier = Modifier.padding(paddingValues)
+            modifier = Modifier.padding(navHostPadding)
         ) {
             composable("notes_directory") {
                 NotesDirectoryScreen(

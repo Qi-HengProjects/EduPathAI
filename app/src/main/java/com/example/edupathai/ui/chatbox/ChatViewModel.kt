@@ -91,7 +91,7 @@ class ChatViewModel(
                 val activeSessionId = sessionId ?: return@launch
 
                 val userMessage = repository.createMessage(
-                    ChatMessage(sessionId = activeSessionId, sender = "user", content = text)
+                    ChatMessage(sessionId = activeSessionId, role = "user", content = text)
                 )
                 _uiState.update { it.copy(messages = it.messages + userMessage) }
 
@@ -102,7 +102,7 @@ class ChatViewModel(
                 }
 
                 val modelMessage = repository.createMessage(
-                    ChatMessage(sessionId = activeSessionId, sender = "model", content = replyText)
+                    ChatMessage(sessionId = activeSessionId, role = "model", content = replyText)
                 )
                 repository.touchSession(activeSessionId)
 
