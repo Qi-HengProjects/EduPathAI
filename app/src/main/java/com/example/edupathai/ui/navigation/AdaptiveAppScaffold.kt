@@ -1,22 +1,20 @@
 package com.example.edupathai.ui.navigation
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.unit.dp
 
-enum class AppDestination(val route: String, val title: String, val icon: ImageVector) {
-    CHAT("chat_home", "AI Chat", Icons.Default.SmartToy),
-    NOTEBOOKS("notes_directory", "Notebooks", Icons.Default.Folder),
-    TIMELINE("daily_timeline", "Timeline", Icons.Default.CalendarToday)
-}
+data class NavigationTabItem(
+    val route: String,
+    val label: String,
+    val icon: ImageVector
+)
 
 @Composable
 fun AdaptiveAppScaffold(
@@ -24,88 +22,44 @@ fun AdaptiveAppScaffold(
     onNavigateTo: (String) -> Unit,
     content: @Composable (PaddingValues) -> Unit
 ) {
-    val configuration = LocalConfiguration.current
-    val isWideScreen = configuration.screenWidthDp.dp >= 600.dp
+    val navItems = listOf(
+        NavigationTabItem(
+            route = "dashboard",
+            label = "Dashboard",
+            icon = Icons.Default.Person
+        ),
+        NavigationTabItem(
+            route = "notes_directory",
+            label = "Notes",
+            icon = Icons.Default.MenuBook
+        ),
+        NavigationTabItem(
+            route = "chat_home",
+            label = "AI Chat",
+            icon = Icons.Default.Chat
+        ),
+        NavigationTabItem(
+            route = "daily_timeline",
+            label = "Schedule",
+            icon = Icons.Default.DateRange
+        )
+    )
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background // Locks the entire screen background to dark theme
-    ) {
-        if (isWideScreen) {
-            // Wide / Landscape: Dark Seamless Left Navigation Rail
-            Row(modifier = Modifier.fillMaxSize()) {
-                NavigationRail(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .widthIn(min = 96.dp)
-                        .padding(horizontal = 4.dp),
-                    containerColor = MaterialTheme.colorScheme.background, // Matches background exactly
-                    contentColor = MaterialTheme.colorScheme.onBackground
-                ) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    AppDestination.entries.forEach { destination ->
-                        val isSelected = when (destination) {
-                            AppDestination.CHAT -> currentRoute?.startsWith("chat_") == true
-                            AppDestination.NOTEBOOKS -> currentRoute == "notes_directory" || currentRoute?.startsWith("notebook_workspace") == true
-                            AppDestination.TIMELINE -> currentRoute == "daily_timeline"
-                        }
-                        NavigationRailItem(
-                            selected = isSelected,
-                            onClick = { onNavigateTo(destination.route) },
-                            icon = { Icon(destination.icon, contentDescription = destination.title) },
-                            label = { Text(destination.title) },
-                            colors = NavigationRailItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-                    }
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                navItems.forEach { item ->
+                    val selected = currentRoute?.startsWith(item.route) == true
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { onNavigateTo(item.route) },
+                        icon = { Icon(item.icon, contentDescription = item.label) },
+                        label = { Text(item.label) }
+                    )
                 }
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    content(PaddingValues(0.dp))
-                }
-            }
-        } else {
-            // Phone Portrait: Bottom Navigation Bar
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                bottomBar = {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ) {
-                        AppDestination.entries.forEach { destination ->
-                            val isSelected = when (destination) {
-                                AppDestination.CHAT -> currentRoute?.startsWith("chat_") == true
-                                AppDestination.NOTEBOOKS -> currentRoute == "notes_directory" || currentRoute?.startsWith("notebook_workspace") == true
-                                AppDestination.TIMELINE -> currentRoute == "daily_timeline"
-                            }
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = { onNavigateTo(destination.route) },
-                                icon = { Icon(destination.icon, contentDescription = destination.title) },
-                                label = { Text(destination.title) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            )
-                        }
-                    }
-                }
-            ) { paddingValues ->
-                content(paddingValues)
             }
         }
+    ) { innerPadding ->
+        content(innerPadding)
     }
 }
