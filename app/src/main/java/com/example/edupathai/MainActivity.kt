@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -55,12 +54,14 @@ class MainActivity : ComponentActivity() {
                 var currentUserId by remember { mutableStateOf(currentSession?.id ?: "") }
 
                 if (currentUserId.isEmpty()) {
+                    // Screen 1: Login & Sign Up Page
                     LoginScreen(
                         onLoginSuccess = { uid ->
                             currentUserId = uid
                         }
                     )
                 } else {
+                    // Main App Navigation with Adaptive Scaffold
                     EduPathNavHost(
                         userId = currentUserId,
                         onLoggedOut = {
@@ -87,10 +88,7 @@ fun EduPathNavHost(
         currentRoute = currentRoute,
         onNavigateTo = { route ->
             navController.navigate(route) {
-                // Pop up to the start destination to avoid stack overflow
-                popUpTo(navController.graph.findStartDestination().id) {
-                    saveState = true
-                }
+                popUpTo("notes_directory") { saveState = true }
                 launchSingleTop = true
                 restoreState = true
             }
@@ -114,7 +112,7 @@ fun EduPathNavHost(
             startDestination = "dashboard",
             modifier = Modifier.padding(navHostPadding)
         ) {
-            // Tab 1: Personal Dashboard
+            // Target Screen 8: Personal Dashboard
             composable("dashboard") {
                 DashboardScreen(
                     userId = userId,
@@ -124,7 +122,7 @@ fun EduPathNavHost(
                 )
             }
 
-            // Sub-page: Settings Panel
+            // Target Screen 9: Settings Panel & Accessibility
             composable("settings") {
                 SettingsScreen(
                     userId = userId,
@@ -135,7 +133,7 @@ fun EduPathNavHost(
                 )
             }
 
-            // Tab 2: Notes Directory
+            // Module 1: Notes & Timeline (Existing)
             composable("notes_directory") {
                 NotesDirectoryScreen(
                     onFolderClick = { folderId, subjectName ->
@@ -148,7 +146,6 @@ fun EduPathNavHost(
                 )
             }
 
-            // Sub-page: Notebook Workspace
             composable(
                 route = "notebook_workspace/{folderId}?subjectName={subjectName}",
                 arguments = listOf(
@@ -180,7 +177,13 @@ fun EduPathNavHost(
                 )
             }
 
-            // Tab 3: AI Chat Home
+            composable("daily_timeline") {
+                DailyTimelineScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // Module 2: AI Chatbot & Conversation History Engine (Existing)
             composable("chat_home") {
                 val chatViewModel = viewModel<ChatViewModel>(
                     key = "chat_home",
@@ -198,7 +201,6 @@ fun EduPathNavHost(
                 )
             }
 
-            // Sub-page: Chat History List
             composable("chat_history") {
                 ChatHistoryScreen(
                     onSessionClick = { sessionId, title ->
@@ -214,7 +216,6 @@ fun EduPathNavHost(
                 )
             }
 
-            // Sub-page: Individual Chat Session
             composable(
                 route = "chat_session/{sessionId}?title={title}",
                 arguments = listOf(
@@ -245,13 +246,6 @@ fun EduPathNavHost(
                 ChatScreen(
                     viewModel = sessionViewModel,
                     onNavigateToHistory = { navController.navigate("chat_history") },
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-
-            // Tab 4: Daily Schedule Timeline
-            composable("daily_timeline") {
-                DailyTimelineScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

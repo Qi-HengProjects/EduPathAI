@@ -34,3 +34,21 @@ data class ChatMessage(
     @SerialName("created_at")
     val createdAt: String? = null
 )
+
+@Serializable
+data class ScheduleEvent(
+    @SerialName("ID")
+    val id: String? = null,
+
+    @SerialName("title")
+    val title: String,
+
+    @SerialName("start_time")
+    val startTime: String,
+
+    @SerialName("end_time")
+    val endTime: String,
+
+    @SerialName("is_completed")
+    val isCompleted:Boolean = false
+)
