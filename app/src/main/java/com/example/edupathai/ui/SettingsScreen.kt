@@ -1,5 +1,6 @@
 package com.example.edupathai.ui
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.edupathai.data.SupabaseProvider
 import com.example.edupathai.data.UserProfile
+import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,10 +29,13 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
 
+    var fullName by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
     var focusMode by remember { mutableStateOf(false) }
     var voiceSpeed by remember { mutableFloatStateOf(1.0f) }
+    var currentEmail by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(userId) {
@@ -38,17 +43,22 @@ fun SettingsScreen(
             val p = SupabaseProvider.db.from("profiles")
                 .select { filter { eq("id", userId) } }
                 .decodeSingle<UserProfile>()
+            fullName = p.fullName
             bio = p.bio
             focusMode = p.focusModeEnabled
             voiceSpeed = p.aiVoiceSpeed
-        } catch (_: Exception) {}
-        isLoading = false
+            currentEmail = p.email
+        } catch (_: Exception) {
+            currentEmail = SupabaseProvider.auth.currentUserOrNull()?.email ?: ""
+        } finally {
+            isLoading = false
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings & Accessibility") },
+                title = { Text("Settings & Profile", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -68,9 +78,18 @@ fun SettingsScreen(
                     .padding(padding)
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // UPDATE: Edit Bio
+                // Name Input
+                OutlinedTextField(
+                    value = fullName,
+                    onValueChange = { fullName = it },
+                    label = { Text("Full Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Bio Input
                 OutlinedTextField(
                     value = bio,
                     onValueChange = { bio = it },
@@ -78,13 +97,13 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // UPDATE: Toggle Focus Mode
+                // Focus Mode Switch
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("Focus Mode", fontWeight = FontWeight.SemiBold)
                         Text("Minimizes UI animations and distractions", style = MaterialTheme.typography.bodySmall)
                     }
@@ -94,7 +113,7 @@ fun SettingsScreen(
                     )
                 }
 
-                // UPDATE: AI Voice Speed
+                // AI Voice Speed Slider
                 Column {
                     Text("AI Voice Speed: ${"%.1f".format(voiceSpeed)}x", fontWeight = FontWeight.SemiBold)
                     Slider(
@@ -105,18 +124,26 @@ fun SettingsScreen(
                     )
                 }
 
+                // Save Profile Changes
                 Button(
                     onClick = {
                         scope.launch {
                             try {
-                                SupabaseProvider.db.from("profiles").update({
-                                    set("bio", bio)
-                                    set("focus_mode_enabled", focusMode)
-                                    set("ai_voice_speed", voiceSpeed)
-                                }) {
-                                    filter { eq("id", userId) }
+                                val emailToSave = if (currentEmail.isNotBlank()) {
+                                    currentEmail
+                                } else {
+                                    SupabaseProvider.auth.currentUserOrNull()?.email ?: ""
                                 }
-                                Toast.makeText(context, "Settings saved successfully!", Toast.LENGTH_SHORT).show()
+                                val updatedProfile = UserProfile(
+                                    id = userId,
+                                    email = emailToSave,
+                                    fullName = fullName,
+                                    bio = bio,
+                                    focusModeEnabled = focusMode,
+                                    aiVoiceSpeed = voiceSpeed
+                                )
+                                SupabaseProvider.db.from("profiles").upsert(updatedProfile)
+                                Toast.makeText(context, "Profile saved successfully!", Toast.LENGTH_SHORT).show()
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Update failed: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
@@ -127,21 +154,38 @@ fun SettingsScreen(
                     Text("Save Changes")
                 }
 
-                HorizontalDivider()
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
+                // Switch Account (Clears saved Remember Me inputs & signs out)
                 OutlinedButton(
                     onClick = {
                         scope.launch {
+                            prefs.edit().clear().apply()
                             SupabaseProvider.auth.signOut()
+                            Toast.makeText(context, "Ready to switch account", Toast.LENGTH_SHORT).show()
                             onLoggedOut()
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Log Out")
+                    Text("Switch Account")
                 }
 
-                // DELETE: Delete account profile
+                // Sign Out (Keeps Remember Me inputs for fast login next time)
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            SupabaseProvider.auth.signOut()
+                            Toast.makeText(context, "Signed out successfully", Toast.LENGTH_SHORT).show()
+                            onLoggedOut()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Sign Out")
+                }
+
+                // Delete Account Record
                 Button(
                     onClick = {
                         scope.launch {
@@ -149,6 +193,7 @@ fun SettingsScreen(
                                 SupabaseProvider.db.from("profiles").delete {
                                     filter { eq("id", userId) }
                                 }
+                                prefs.edit().clear().apply()
                                 SupabaseProvider.auth.signOut()
                                 Toast.makeText(context, "Account data deleted", Toast.LENGTH_SHORT).show()
                                 onLoggedOut()

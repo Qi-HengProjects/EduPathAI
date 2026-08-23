@@ -1,5 +1,6 @@
 package com.example.edupathai.ui
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,9 +25,12 @@ fun LoginScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
 
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var fullName by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(prefs.getString("saved_email", "") ?: "") }
+    var password by remember { mutableStateOf(prefs.getString("saved_password", "") ?: "") }
+    var rememberMe by remember { mutableStateOf(prefs.getBoolean("remember_me", false)) }
     var isSignUp by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
@@ -53,7 +57,18 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
+
+            if (isSignUp) {
+                OutlinedTextField(
+                    value = fullName,
+                    onValueChange = { fullName = it },
+                    label = { Text("Full Name / Student Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
             OutlinedTextField(
                 value = email,
@@ -63,7 +78,7 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             OutlinedTextField(
                 value = password,
@@ -75,12 +90,25 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = rememberMe,
+                    onCheckedChange = { rememberMe = it }
+                )
+                Text(text = "Remember Me", style = MaterialTheme.typography.bodyMedium)
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
 
             Button(
                 onClick = {
-                    if (email.isBlank() || password.isBlank()) {
-                        Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                    if (email.isBlank() || password.isBlank() || (isSignUp && fullName.isBlank())) {
+                        Toast.makeText(context, "Please fill in all required fields", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     isLoading = true
@@ -93,11 +121,15 @@ fun LoginScreen(
                                 }
                                 val uid = SupabaseProvider.auth.currentUserOrNull()?.id ?: ""
                                 if (uid.isNotEmpty()) {
-                                    // CREATE: Initial profile record
                                     SupabaseProvider.db.from("profiles").insert(
-                                        UserProfile(id = uid, email = email)
+                                        UserProfile(
+                                            id = uid,
+                                            email = email,
+                                            fullName = fullName
+                                        )
                                     )
                                 }
+                                saveCredentials(prefs, rememberMe, email, password)
                                 Toast.makeText(context, "Registration successful!", Toast.LENGTH_SHORT).show()
                                 onLoginSuccess(uid)
                             } else {
@@ -106,6 +138,7 @@ fun LoginScreen(
                                     this.password = password
                                 }
                                 val uid = SupabaseProvider.auth.currentUserOrNull()?.id ?: ""
+                                saveCredentials(prefs, rememberMe, email, password)
                                 Toast.makeText(context, "Login successful!", Toast.LENGTH_SHORT).show()
                                 onLoginSuccess(uid)
                             }
@@ -135,5 +168,24 @@ fun LoginScreen(
                 )
             }
         }
+    }
+}
+
+private fun saveCredentials(
+    prefs: android.content.SharedPreferences,
+    remember: Boolean,
+    email: String,
+    pass: String
+) {
+    prefs.edit().apply {
+        putBoolean("remember_me", remember)
+        if (remember) {
+            putString("saved_email", email)
+            putString("saved_password", pass)
+        } else {
+            remove("saved_email")
+            remove("saved_password")
+        }
+        apply()
     }
 }
