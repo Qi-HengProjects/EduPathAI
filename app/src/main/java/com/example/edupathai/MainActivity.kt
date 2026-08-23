@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
@@ -24,6 +27,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.edupathai.data.SupabaseProvider
+import com.example.edupathai.ui.DashboardScreen
+import com.example.edupathai.ui.LoginScreen
+import com.example.edupathai.ui.SettingsScreen
 import com.example.edupathai.ui.chatbox.ChatHistoryScreen
 import com.example.edupathai.ui.chatbox.ChatScreen
 import com.example.edupathai.ui.chatbox.ChatViewModel
@@ -43,7 +50,25 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             EduPathAITheme {
-                EduPathNavHost()
+                val currentSession = SupabaseProvider.auth.currentUserOrNull()
+                var currentUserId by remember { mutableStateOf(currentSession?.id ?: "") }
+
+                if (currentUserId.isEmpty()) {
+                    // Screen 1: Login & Sign Up Page
+                    LoginScreen(
+                        onLoginSuccess = { uid ->
+                            currentUserId = uid
+                        }
+                    )
+                } else {
+                    // Main App Navigation with Adaptive Scaffold
+                    EduPathNavHost(
+                        userId = currentUserId,
+                        onLoggedOut = {
+                            currentUserId = ""
+                        }
+                    )
+                }
             }
         }
     }
@@ -51,7 +76,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun EduPathNavHost() {
+fun EduPathNavHost(
+    userId: String,
+    onLoggedOut: () -> Unit
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -66,8 +94,6 @@ fun EduPathNavHost() {
             }
         }
     ) { paddingValues ->
-        // While the keyboard is up, don't also reserve space for the bottom tab bar underneath
-        // it - that reserved-but-now-hidden strip is exactly the gap above the keyboard.
         val imeVisible = WindowInsets.isImeVisible
         val layoutDirection = LocalLayoutDirection.current
         val navHostPadding = if (imeVisible) {
@@ -83,9 +109,31 @@ fun EduPathNavHost() {
 
         NavHost(
             navController = navController,
-            startDestination = "notes_directory",
+            startDestination = "dashboard",
             modifier = Modifier.padding(navHostPadding)
         ) {
+            // Target Screen 8: Personal Dashboard
+            composable("dashboard") {
+                DashboardScreen(
+                    userId = userId,
+                    onNavigateToSettings = {
+                        navController.navigate("settings")
+                    }
+                )
+            }
+
+            // Target Screen 9: Settings Panel & Accessibility
+            composable("settings") {
+                SettingsScreen(
+                    userId = userId,
+                    onBack = {
+                        navController.popBackStack()
+                    },
+                    onLoggedOut = onLoggedOut
+                )
+            }
+
+            // Module 1: Notes & Timeline (Existing)
             composable("notes_directory") {
                 NotesDirectoryScreen(
                     onFolderClick = { folderId, subjectName ->
@@ -135,8 +183,7 @@ fun EduPathNavHost() {
                 )
             }
 
-            // Module 2: AI Chatbot & Conversation History Engine
-
+            // Module 2: AI Chatbot & Conversation History Engine (Existing)
             composable("chat_home") {
                 val chatViewModel = viewModel<ChatViewModel>(
                     key = "chat_home",
@@ -161,7 +208,6 @@ fun EduPathNavHost() {
                         navController.navigate("chat_session/$sessionId?title=$encodedTitle")
                     },
                     onStartNewChat = {
-                        // Pop chat_home off the stack so a fresh ViewModel (blank conversation) is created.
                         navController.navigate("chat_home") {
                             popUpTo("chat_home") { inclusive = true }
                         }
