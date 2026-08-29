@@ -7,6 +7,9 @@ import kotlinx.serialization.Serializable
 data class ScheduleTask(
     val id: String? = null,
 
+    @SerialName("user_id")
+    val userId: String? = null, 
+
     @SerialName("folder_id")
     val folderId: String? = null,
 

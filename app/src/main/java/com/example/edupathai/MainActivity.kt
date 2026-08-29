@@ -4,12 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,10 +30,12 @@ import com.example.edupathai.ui.chatbox.ChatHistoryScreen
 import com.example.edupathai.ui.chatbox.ChatScreen
 import com.example.edupathai.ui.chatbox.ChatViewModel
 import com.example.edupathai.ui.navigation.AdaptiveAppScaffold
+import com.example.edupathai.ui.navigation.AppDestination
 import com.example.edupathai.ui.notes.NoteDetailViewModel
 import com.example.edupathai.ui.notes.NotebookWorkspaceScreen
 import com.example.edupathai.ui.notes.NotesDirectoryScreen
 import com.example.edupathai.ui.schedule.DailyTimelineScreen
+import com.example.edupathai.ui.schedule.ScheduleViewModel
 import com.example.edupathai.ui.theme.EduPathAITheme
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -56,8 +53,8 @@ class MainActivity : ComponentActivity() {
                 if (currentUserId.isEmpty()) {
                     // Screen 1: Login & Sign Up Page
                     LoginScreen(
-                        onLoginSuccess = { uid ->
-                            currentUserId = uid
+                        onLoginSuccess = {
+                            currentUserId = SupabaseProvider.auth.currentUserOrNull()?.id ?: ""
                         }
                     )
                 } else {
@@ -85,32 +82,19 @@ fun EduPathNavHost(
     val currentRoute = navBackStackEntry?.destination?.route
 
     AdaptiveAppScaffold(
-        currentRoute = currentRoute,
-        onNavigateTo = { route ->
-            navController.navigate(route) {
-                popUpTo("notes_directory") { saveState = true }
+        currentDestination = AppDestination.fromRoute(currentRoute),
+        onNavigate = { destination ->
+            navController.navigate(destination.route) {
+                popUpTo("dashboard") { saveState = true }
                 launchSingleTop = true
                 restoreState = true
             }
         }
-    ) { paddingValues ->
-        val imeVisible = WindowInsets.isImeVisible
-        val layoutDirection = LocalLayoutDirection.current
-        val navHostPadding = if (imeVisible) {
-            androidx.compose.foundation.layout.PaddingValues(
-                start = paddingValues.calculateStartPadding(layoutDirection),
-                top = paddingValues.calculateTopPadding(),
-                end = paddingValues.calculateEndPadding(layoutDirection),
-                bottom = 0.dp
-            )
-        } else {
-            paddingValues
-        }
-
+    ) {
         NavHost(
             navController = navController,
             startDestination = "dashboard",
-            modifier = Modifier.padding(navHostPadding)
+            modifier = Modifier.fillMaxSize()
         ) {
             // Target Screen 8: Personal Dashboard
             composable("dashboard") {
@@ -178,7 +162,9 @@ fun EduPathNavHost(
             }
 
             composable("daily_timeline") {
+                val scheduleViewModel = viewModel<ScheduleViewModel>()
                 DailyTimelineScreen(
+                    viewModel = scheduleViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

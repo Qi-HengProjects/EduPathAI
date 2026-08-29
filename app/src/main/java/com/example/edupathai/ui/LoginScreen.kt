@@ -1,38 +1,43 @@
 package com.example.edupathai.ui
 
-import android.content.Context
-import android.widget.Toast
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.edupathai.data.SupabaseProvider
 import com.example.edupathai.data.UserProfile
+import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.providers.builtin.Email
+import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: (userId: String) -> Unit
+    onLoginSuccess: () -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
-
-    var fullName by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf(prefs.getString("saved_email", "") ?: "") }
-    var password by remember { mutableStateOf(prefs.getString("saved_password", "") ?: "") }
-    var rememberMe by remember { mutableStateOf(prefs.getBoolean("remember_me", false)) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var isSignUp by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Mandatory Profile Setup State
+    var showBioDialog by remember { mutableStateOf(false) }
+    var newUserId by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var bio by remember { mutableStateOf("") }
+    var isSavingProfile by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val client = SupabaseProvider.client
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -47,145 +52,232 @@ fun LoginScreen(
         ) {
             Text(
                 text = if (isSignUp) "Create Account" else "Welcome Back",
-                fontSize = 28.sp,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = "EduPath AI Learning Assistant",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onBackground
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
-
-            if (isSignUp) {
-                OutlinedTextField(
-                    value = fullName,
-                    onValueChange = { fullName = it },
-                    label = { Text("Full Name / Student Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-            }
+            Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
-                label = { Text("Email Address") },
+                onValueChange = {
+                    email = it
+                    errorMessage = null
+                },
+                label = { Text("Email") },
+                leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = {
+                    password = it
+                    errorMessage = null
+                },
                 label = { Text("Password") },
+                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                 visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Checkbox(
-                    checked = rememberMe,
-                    onCheckedChange = { rememberMe = it }
+            errorMessage?.let {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
                 )
-                Text(text = "Remember Me", style = MaterialTheme.typography.bodyMedium)
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = {
-                    if (email.isBlank() || password.isBlank() || (isSignUp && fullName.isBlank())) {
-                        Toast.makeText(context, "Please fill in all required fields", Toast.LENGTH_SHORT).show()
+                    if (email.isBlank() || password.isBlank()) {
+                        errorMessage = "Please enter both email and password."
                         return@Button
                     }
+                    if (isSignUp && password.length < 6) {
+                        errorMessage = "Password must be at least 6 characters."
+                        return@Button
+                    }
+
                     isLoading = true
-                    scope.launch {
+                    errorMessage = null
+
+                    coroutineScope.launch {
                         try {
                             if (isSignUp) {
-                                SupabaseProvider.auth.signUpWith(Email) {
-                                    this.email = email
-                                    this.password = password
+                                // 1. Attempt Sign Up
+                                client.auth.signUpWith(Email) {
+                                    this.email = email.trim()
+                                    this.password = password.trim()
                                 }
-                                val uid = SupabaseProvider.auth.currentUserOrNull()?.id ?: ""
-                                if (uid.isNotEmpty()) {
-                                    SupabaseProvider.db.from("profiles").insert(
-                                        UserProfile(
-                                            id = uid,
-                                            email = email,
-                                            fullName = fullName
-                                        )
-                                    )
+
+                                val currentUser = client.auth.currentUserOrNull()
+
+                                // 2. Detect duplicate account
+                                if (currentUser == null || currentUser.identities.isNullOrEmpty()) {
+                                    isLoading = false
+                                    errorMessage = "An account with this email already exists. Please log in."
+                                    try { client.auth.signOut() } catch (_: Exception) {}
+                                    return@launch
                                 }
-                                saveCredentials(prefs, rememberMe, email, password)
-                                Toast.makeText(context, "Registration successful!", Toast.LENGTH_SHORT).show()
-                                onLoginSuccess(uid)
+
+                                // 3. Require user to set up profile
+                                newUserId = currentUser.id
+                                isLoading = false
+                                showBioDialog = true
                             } else {
-                                SupabaseProvider.auth.signInWith(Email) {
-                                    this.email = email
-                                    this.password = password
+                                // Normal Login
+                                client.auth.signInWith(Email) {
+                                    this.email = email.trim()
+                                    this.password = password.trim()
                                 }
-                                val uid = SupabaseProvider.auth.currentUserOrNull()?.id ?: ""
-                                saveCredentials(prefs, rememberMe, email, password)
-                                Toast.makeText(context, "Login successful!", Toast.LENGTH_SHORT).show()
-                                onLoginSuccess(uid)
+                                isLoading = false
+                                onLoginSuccess()
                             }
                         } catch (e: Exception) {
-                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                        } finally {
                             isLoading = false
+                            val msg = e.message ?: "Authentication failed"
+                            errorMessage = when {
+                                msg.contains("already registered", ignoreCase = true) ||
+                                        msg.contains("already exists", ignoreCase = true) ||
+                                        msg.contains("duplicate key", ignoreCase = true) -> {
+                                    "This email is already registered. Please log in."
+                                }
+                                msg.contains("Invalid login credentials", ignoreCase = true) -> {
+                                    "Invalid email or password. Please try again."
+                                }
+                                else -> msg
+                            }
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
                 enabled = !isLoading
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 } else {
-                    Text(text = if (isSignUp) "Sign Up" else "Log In", fontSize = 16.sp)
+                    Text(if (isSignUp) "Sign Up" else "Log In")
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            TextButton(onClick = { isSignUp = !isSignUp }) {
+            TextButton(
+                onClick = {
+                    isSignUp = !isSignUp
+                    errorMessage = null
+                }
+            ) {
                 Text(
-                    text = if (isSignUp) "Already have an account? Log In"
+                    if (isSignUp) "Already have an account? Log In"
                     else "Don't have an account? Sign Up"
                 )
             }
         }
-    }
-}
 
-private fun saveCredentials(
-    prefs: android.content.SharedPreferences,
-    remember: Boolean,
-    email: String,
-    pass: String
-) {
-    prefs.edit().apply {
-        putBoolean("remember_me", remember)
-        if (remember) {
-            putString("saved_email", email)
-            putString("saved_password", pass)
-        } else {
-            remove("saved_email")
-            remove("saved_password")
+        // --- Mandatory Profile Setup Dialog (No Skip Option) ---
+        if (showBioDialog) {
+            AlertDialog(
+                onDismissRequest = { /* Cannot dismiss without completing input */ },
+                title = {
+                    Text(
+                        text = "Complete Your Profile",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Please enter your name and study goals to set up your AI learning profile:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = { username = it },
+                            label = { Text("Display Name *") },
+                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                            singleLine = true,
+                            isError = username.isBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = bio,
+                            onValueChange = { bio = it },
+                            label = { Text("Bio / Focus Goals *") },
+                            placeholder = { Text("e.g., CS Student preparing for exams, visual learner") },
+                            minLines = 3,
+                            maxLines = 4,
+                            isError = bio.isBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (username.isBlank() || bio.isBlank()) {
+                            Text(
+                                text = "Both fields are required to continue.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (username.isNotBlank() && bio.isNotBlank()) {
+                                isSavingProfile = true
+                                coroutineScope.launch {
+                                    try {
+                                        val profile = UserProfile(
+                                            id = newUserId,
+                                            email = email.trim(),
+                                            username = username.trim(),
+                                            bio = bio.trim()
+                                        )
+                                        client.from("profiles").upsert(profile)
+                                        showBioDialog = false
+                                        onLoginSuccess()
+                                    } catch (_: Exception) {
+                                        showBioDialog = false
+                                        onLoginSuccess()
+                                    } finally {
+                                        isSavingProfile = false
+                                    }
+                                }
+                            }
+                        },
+                        enabled = username.isNotBlank() && bio.isNotBlank() && !isSavingProfile,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isSavingProfile) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Text("Complete Setup")
+                        }
+                    }
+                }
+            )
         }
-        apply()
     }
 }

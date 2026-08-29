@@ -31,10 +31,8 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
 
-    var fullName by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
-    var focusMode by remember { mutableStateOf(false) }
-    var voiceSpeed by remember { mutableFloatStateOf(1.0f) }
     var currentEmail by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
 
@@ -43,11 +41,9 @@ fun SettingsScreen(
             val p = SupabaseProvider.db.from("profiles")
                 .select { filter { eq("id", userId) } }
                 .decodeSingle<UserProfile>()
-            fullName = p.fullName
-            bio = p.bio
-            focusMode = p.focusModeEnabled
-            voiceSpeed = p.aiVoiceSpeed
-            currentEmail = p.email
+            username = p.username ?: ""
+            bio = p.bio ?: ""
+            currentEmail = p.email ?: ""
         } catch (_: Exception) {
             currentEmail = SupabaseProvider.auth.currentUserOrNull()?.email ?: ""
         } finally {
@@ -82,9 +78,9 @@ fun SettingsScreen(
             ) {
                 // Name Input
                 OutlinedTextField(
-                    value = fullName,
-                    onValueChange = { fullName = it },
-                    label = { Text("Full Name") },
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -96,33 +92,6 @@ fun SettingsScreen(
                     label = { Text("Edit Bio") },
                     modifier = Modifier.fillMaxWidth()
                 )
-
-                // Focus Mode Switch
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Focus Mode", fontWeight = FontWeight.SemiBold)
-                        Text("Minimizes UI animations and distractions", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(
-                        checked = focusMode,
-                        onCheckedChange = { focusMode = it }
-                    )
-                }
-
-                // AI Voice Speed Slider
-                Column {
-                    Text("AI Voice Speed: ${"%.1f".format(voiceSpeed)}x", fontWeight = FontWeight.SemiBold)
-                    Slider(
-                        value = voiceSpeed,
-                        onValueChange = { voiceSpeed = it },
-                        valueRange = 0.5f..2.0f,
-                        steps = 5
-                    )
-                }
 
                 // Save Profile Changes
                 Button(
@@ -137,10 +106,8 @@ fun SettingsScreen(
                                 val updatedProfile = UserProfile(
                                     id = userId,
                                     email = emailToSave,
-                                    fullName = fullName,
-                                    bio = bio,
-                                    focusModeEnabled = focusMode,
-                                    aiVoiceSpeed = voiceSpeed
+                                    username = username,
+                                    bio = bio
                                 )
                                 SupabaseProvider.db.from("profiles").upsert(updatedProfile)
                                 Toast.makeText(context, "Profile saved successfully!", Toast.LENGTH_SHORT).show()

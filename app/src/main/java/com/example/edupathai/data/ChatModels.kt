@@ -6,15 +6,13 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ChatSession(
     val id: String? = null,
-
-    val title: String,
-
+    @SerialName("user_id")
+    val userId: String? = null,
+    val title: String = "New Conversation",
     @SerialName("is_pinned")
     val isPinned: Boolean = false,
-
     @SerialName("created_at")
     val createdAt: String? = null,
-
     @SerialName("updated_at")
     val updatedAt: String? = null
 )
@@ -22,33 +20,19 @@ data class ChatSession(
 @Serializable
 data class ChatMessage(
     val id: String? = null,
-
     @SerialName("session_id")
-    val sessionId: String,
-
-    // "user" or "model"
-    val role: String,
-
+    val sessionId: String? = null,
+    @SerialName("user_id")
+    val userId: String? = null,
+    val role: String = "user", // "user" or "model"
     val content: String,
-
     @SerialName("created_at")
     val createdAt: String? = null
-)
+) {
+    val isUser: Boolean
+        get() = role.equals("user", ignoreCase = true)
 
-@Serializable
-data class ScheduleEvent(
-    @SerialName("ID")
-    val id: String? = null,
-
-    @SerialName("title")
-    val title: String,
-
-    @SerialName("start_time")
-    val startTime: String,
-
-    @SerialName("end_time")
-    val endTime: String,
-
-    @SerialName("is_completed")
-    val isCompleted:Boolean = false
-)
+    // Aliases for compatibility if needed, or just use content/role everywhere
+    val text: String get() = content
+    val sender: String get() = role
+}

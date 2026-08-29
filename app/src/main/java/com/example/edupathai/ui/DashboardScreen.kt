@@ -45,7 +45,7 @@ fun DashboardScreen(
             } catch (_: Exception) {
                 val userEmail = SupabaseProvider.auth.currentUserOrNull()?.email ?: ""
                 val defaultName = if (userEmail.contains("@")) userEmail.substringBefore("@") else "Student"
-                profile = UserProfile(id = userId, email = userEmail, fullName = defaultName)
+                profile = UserProfile(id = userId, email = userEmail, username = defaultName)
             } finally {
                 isLoading = false
             }
@@ -112,8 +112,8 @@ fun DashboardScreen(
                         Column {
                             val displayName = remember(profile) {
                                 when {
-                                    !profile?.fullName.isNullOrBlank() -> profile!!.fullName
-                                    !profile?.email.isNullOrBlank() && profile!!.email.contains("@") -> profile!!.email.substringBefore("@")
+                                    !profile?.username.isNullOrBlank() -> profile!!.username!!
+                                    !profile?.email.isNullOrBlank() && profile!!.email!!.contains("@") -> profile!!.email!!.substringBefore("@")
                                     else -> "Student"
                                 }
                             }
@@ -147,46 +147,15 @@ fun DashboardScreen(
                         Text("Learning Style Metrics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Detected Style: ${profile?.learningStyle}",
+                            text = "Current Style: ${profile?.learningStyle ?: "Not set"}",
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Task Completion Rate (${profile?.completionRate}%)")
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { (profile?.completionRate ?: 0) / 100f },
-                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
-                        )
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Study Trend Analytics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Weekly Study Hours:")
-                            Text("${profile?.weeklyStudyHours} hrs", fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Focus Mode Status:")
-                            Text(
-                                if (profile?.focusModeEnabled == true) "Active" else "Disabled",
-                                color = if (profile?.focusModeEnabled == true) Color(0xFF4CAF50) else Color.Gray,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = "Joined: ${profile?.createdAt?.take(10) ?: "Recently"}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }

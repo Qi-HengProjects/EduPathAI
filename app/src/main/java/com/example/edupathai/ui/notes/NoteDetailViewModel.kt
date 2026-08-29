@@ -2,179 +2,144 @@ package com.example.edupathai.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.edupathai.data.AiPromptType
-import com.example.edupathai.data.GeminiService
-import com.example.edupathai.data.NoteBookEntry
-import com.example.edupathai.data.NoteRepository
+import com.example.edupathai.data.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 data class NoteDetailUiState(
-    val isLoading: Boolean = false,
-    val isAiProcessing: Boolean = false,
-    val notes: List<NoteBookEntry> = emptyList(),
-    val currentNoteId: String? = null,
+    val noteId: String? = null,
+    val folderId: String = "",
     val title: String = "",
     val content: String = "",
-    val isPreviewMode: Boolean = false,
-    val isInitialLoadDone: Boolean = false,
-    val snackbarMessage: String? = null,
-    val errorMessage: String? = null
+    val isLoading: Boolean = false,
+    val isAiProcessing: Boolean = false,
+    val activeAiAction: AiPromptType? = null,
+    val simplifiedJargon: String? = null,
+    val activeRecallQuiz: String? = null,
+    val mindmapData: MindmapData? = null, // Visual Node Diagram Data
+    val snackbarMessage: String? = null
 )
 
 class NoteDetailViewModel(
     private val folderId: String,
     private val repository: NoteRepository = NoteRepository(),
+    private val scheduleRepository: ScheduleRepository = ScheduleRepository(),
     private val geminiService: GeminiService = GeminiService()
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(NoteDetailUiState())
+    private val _uiState = MutableStateFlow(NoteDetailUiState(folderId = folderId))
     val uiState: StateFlow<NoteDetailUiState> = _uiState.asStateFlow()
 
-    init {
-        loadNotes()
+    fun updateTitle(newTitle: String) {
+        _uiState.update { it.copy(title = newTitle) }
     }
 
-    fun loadNotes() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            try {
-                val fetchedNotes = repository.getNotesByFolder(folderId)
-                val activeNote = fetchedNotes.firstOrNull()
-
-                _uiState.update { currentState ->
-                    // Prevent overwriting if the user has already started typing
-                    val shouldKeepUserDraft = currentState.content.isNotBlank() && !currentState.isInitialLoadDone
-
-                    currentState.copy(
-                        isLoading = false,
-                        isInitialLoadDone = true,
-                        notes = fetchedNotes,
-                        currentNoteId = if (shouldKeepUserDraft) currentState.currentNoteId else activeNote?.id,
-                        title = if (shouldKeepUserDraft) currentState.title else (activeNote?.title ?: "Untitled Note"),
-                        content = if (shouldKeepUserDraft) currentState.content else (activeNote?.contentMarkdown ?: ""),
-                        errorMessage = null
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, isInitialLoadDone = true, errorMessage = e.message)
-                }
-            }
-        }
-    }
-
-    fun updateDraft(title: String, content: String) {
-        _uiState.update { it.copy(title = title, content = content) }
+    fun updateContent(newContent: String) {
+        _uiState.update { it.copy(content = newContent) }
     }
 
     fun runAiAction(actionType: AiPromptType) {
         val currentContent = _uiState.value.content
-
         if (currentContent.trim().isBlank()) {
-            _uiState.update {
-                it.copy(
-                    content = "⚠️ Please write some notes here first before clicking '${actionType.title}'.",
-                    snackbarMessage = "Note is empty."
-                )
-            }
+            _uiState.update { it.copy(snackbarMessage = "Please write some note content first.") }
             return
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isAiProcessing = true) }
+            _uiState.update { it.copy(isAiProcessing = true, activeAiAction = actionType) }
 
-            // Guaranteed execution inside try/catch so coroutine never dies silently
             val resultText = try {
                 geminiService.processNoteContent(actionType, currentContent)
             } catch (e: Throwable) {
-                "❌ UNEXPECTED ERROR: ${e.localizedMessage ?: e.javaClass.simpleName}"
+                "Error processing AI request: ${e.message}"
             }
 
             _uiState.update { state ->
-                state.copy(
-                    isAiProcessing = false,
-                    content = "${state.content}\n\n---\n### 🤖 ${actionType.title}\n$resultText",
-                    snackbarMessage = "AI ${actionType.title} complete!"
-                )
+                when (actionType) {
+                    AiPromptType.SIMPLIFY_JARGON -> state.copy(
+                        isAiProcessing = false,
+                        activeAiAction = null,
+                        simplifiedJargon = resultText,
+                        snackbarMessage = "Simplified explanation ready!"
+                    )
+                    AiPromptType.GENERATE_QUIZ -> state.copy(
+                        isAiProcessing = false,
+                        activeAiAction = null,
+                        activeRecallQuiz = resultText,
+                        snackbarMessage = "Quiz flashcards ready!"
+                    )
+                    AiPromptType.MINDMAP -> state.copy(
+                        isAiProcessing = false,
+                        activeAiAction = null,
+                        mindmapData = geminiService.parseMindmapData(resultText, state.title),
+                        snackbarMessage = "Visual Mindmap diagram generated!"
+                    )
+                }
             }
         }
     }
 
-    fun selectNote(note: NoteBookEntry) {
-        _uiState.update {
-            it.copy(
-                currentNoteId = note.id,
-                title = note.title,
-                content = note.contentMarkdown,
-                isPreviewMode = false
+    fun scheduleReviewTask(actionType: AiPromptType) {
+        viewModelScope.launch {
+            val noteTitle = _uiState.value.title.ifBlank { "Study Notes" }
+            val taskTitle = when (actionType) {
+                AiPromptType.SIMPLIFY_JARGON -> "Review Simplified: $noteTitle"
+                AiPromptType.GENERATE_QUIZ -> "Practice Flashcards: $noteTitle"
+                AiPromptType.MINDMAP -> "Study Mindmap: $noteTitle"
+            }
+
+            val today = LocalDate.now().toString()
+            val task = ScheduleTask(
+                title = taskTitle,
+                startTime = "${today}T14:00:00",
+                endTime = "${today}T14:45:00",
+                energyLevel = "medium",
+                taskType = "study",
+                isCompleted = false
             )
+
+            try {
+                scheduleRepository.addTask(task)
+                _uiState.update { it.copy(snackbarMessage = "Added to Daily Timeline!") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(snackbarMessage = "Failed to schedule: ${e.message}") }
+            }
         }
     }
 
-    fun createNewNote() {
-        _uiState.update {
-            it.copy(
-                currentNoteId = null,
-                title = "New Note",
-                content = "",
-                isPreviewMode = false
-            )
+    fun clearAiIsland(actionType: AiPromptType) {
+        _uiState.update { state ->
+            when (actionType) {
+                AiPromptType.SIMPLIFY_JARGON -> state.copy(simplifiedJargon = null)
+                AiPromptType.GENERATE_QUIZ -> state.copy(activeRecallQuiz = null)
+                AiPromptType.MINDMAP -> state.copy(mindmapData = null)
+            }
         }
-    }
-
-    fun togglePreviewMode() {
-        _uiState.update { it.copy(isPreviewMode = !it.isPreviewMode) }
     }
 
     fun clearSnackbar() {
         _uiState.update { it.copy(snackbarMessage = null) }
     }
 
-    fun saveNote() {
-        val state = _uiState.value
-        if (state.title.isBlank()) return
-
+    fun saveNote(onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            val state = _uiState.value
+            val entry = NoteBookEntry(
+                id = state.noteId,
+                folderId = state.folderId,
+                title = state.title.ifBlank { "Untitled Note" },
+                contentMarkdown = state.content
+            )
             try {
-                if (state.currentNoteId != null) {
-                    repository.updateNoteEntry(state.currentNoteId, state.title, state.content)
-                } else {
-                    val newEntry = repository.createNoteEntry(
-                        NoteBookEntry(
-                            folderId = folderId,
-                            title = state.title,
-                            contentMarkdown = state.content
-                        )
-                    )
-                    _uiState.update { it.copy(currentNoteId = newEntry.id) }
-                }
-                val refreshedNotes = repository.getNotesByFolder(folderId)
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        notes = refreshedNotes,
-                        snackbarMessage = "Note saved!"
-                    )
-                }
+                repository.saveNote(entry)
+                _uiState.update { it.copy(snackbarMessage = "Note saved successfully!") }
+                onSuccess()
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
-            }
-        }
-    }
-
-    fun deleteNote() {
-        val noteId = _uiState.value.currentNoteId ?: return
-        viewModelScope.launch {
-            try {
-                repository.deleteNoteEntry(noteId)
-                loadNotes()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(snackbarMessage = "Failed to save: ${e.message}") }
             }
         }
     }

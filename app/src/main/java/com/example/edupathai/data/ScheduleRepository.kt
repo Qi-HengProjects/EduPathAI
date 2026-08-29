@@ -1,24 +1,21 @@
 package com.example.edupathai.data
 
 import io.github.jan.supabase.postgrest.from
-import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-class ScheduleRepository(
-    private val geminiService: GeminiService = GeminiService()
-) {
+class ScheduleRepository {
     private val client = SupabaseProvider.client
 
-    suspend fun getTasks(): List<ScheduleTask> {
-        return client.from("schedule_tasks").select {
-            order(column = "start_time", order = Order.ASCENDING)
-        }.decodeList<ScheduleTask>()
+    suspend fun fetchTasks(): List<ScheduleTask> = withContext(Dispatchers.IO) {
+        client.from("schedule_tasks").select().decodeList<ScheduleTask>()
     }
 
-    suspend fun createTask(task: ScheduleTask) {
+    suspend fun addTask(task: ScheduleTask) = withContext(Dispatchers.IO) {
         client.from("schedule_tasks").insert(task)
     }
 
-    suspend fun updateTask(task: ScheduleTask) {
+    suspend fun updateTask(task: ScheduleTask) = withContext(Dispatchers.IO) {
         task.id?.let { id ->
             client.from("schedule_tasks").update(task) {
                 filter { eq("id", id) }
@@ -26,25 +23,9 @@ class ScheduleRepository(
         }
     }
 
-    suspend fun toggleTaskCompletion(taskId: String, isCompleted: Boolean) {
-        client.from("schedule_tasks").update(
-            { set("is_completed", isCompleted) }
-        ) {
-            filter { eq("id", taskId) }
-        }
-    }
-
-    suspend fun deleteTask(taskId: String) {
+    suspend fun deleteTask(taskId: String) = withContext(Dispatchers.IO) {
         client.from("schedule_tasks").delete {
             filter { eq("id", taskId) }
-        }
-    }
-
-    suspend fun generateAISchedule(prompt: String) {
-        // 使用全新的 fetchStudySchedule 方法
-        val generatedTasks = geminiService.fetchStudySchedule(prompt)
-        for (task in generatedTasks) {
-            createTask(task)
         }
     }
 }

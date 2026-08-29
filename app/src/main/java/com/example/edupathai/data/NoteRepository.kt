@@ -29,6 +29,15 @@ class NoteRepository {
         }.decodeSingle<NoteBookEntry>()
     }
 
+    suspend fun saveNote(entry: NoteBookEntry): NoteBookEntry {
+        return if (entry.id == null) {
+            createNoteEntry(entry)
+        } else {
+            updateNoteEntry(entry.id, entry.title, entry.contentMarkdown)
+            entry
+        }
+    }
+
     suspend fun updateNoteEntry(id: String, title: String, contentMarkdown: String) {
         client.from("notebook_entries").update(
             {
