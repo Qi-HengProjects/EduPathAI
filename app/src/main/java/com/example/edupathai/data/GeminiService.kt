@@ -1,129 +1,148 @@
 package com.example.edupathai.data
 
-import android.util.Log
 import com.example.edupathai.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 
-enum class AiPromptType(val title: String) {
-    SIMPLIFY_JARGON("Simplified Explanation"),
-    GENERATE_QUIZ("Active Recall Flashcards"),
-    MINDMAP("Visual Study Outline")
-}
+object GeminiService {
+    private val jsonParser = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
 
-data class MindmapBranch(val title: String, val subItems: List<String>)
-data class MindmapData(val rootTitle: String, val branches: List<MindmapBranch>)
+    private val model by lazy {
+        GenerativeModel(
+            modelName = "gemini-1.5-flash",
+            apiKey = BuildConfig.GEMINI_API_KEY
+        )
+    }
 
-class GeminiService {
+    fun sanitizeText(text: String): String {
+        return text
+            .replace("**", "")
+            .replace("*", "")
+            .replace("### ", "")
+            .replace("## ", "")
+            .replace("# ", "")
+            .replace("```json", "")
+            .replace("```", "")
+            .trim()
+    }
 
-    suspend fun processNoteContent(action: AiPromptType, content: String): String = withContext(Dispatchers.IO) {
-        val rawApiKey = BuildConfig.GEMINI_API_KEY
-        if (rawApiKey.isBlank()) return@withContext "CONFIG ERROR: GEMINI_API_KEY is missing in local.properties."
-        if (content.isBlank()) return@withContext "Note is empty. Please enter some text first."
-
-        val prompt = when (action) {
-            AiPromptType.SIMPLIFY_JARGON -> """
-                You are a learning tutor. Explain the key ideas of the material below in plain language with analogies.
-                
-                RULES:
-                - Use '• ' for bullet points.
-                - Leave an empty line between bullet points.
-                - STRICT: Do NOT use markdown symbols. Never use asterisks (** or *), hashtags (#), or backticks.
-                
-                Material:
-                $content
-            """.trimIndent()
-
-            AiPromptType.GENERATE_QUIZ -> """
-                Create 3 active recall flashcards from the text below.
-                
-                Format each pair strictly as:
-                Q: [Question]
-                A: [Answer]
-                
-                RULES:
-                - Leave an empty line between each flashcard.
-                - STRICT: Do NOT use markdown symbols. Never use asterisks (** or *), hashtags (#), or backticks.
-                
-                Material:
-                $content
-            """.trimIndent()
-
-            AiPromptType.MINDMAP -> """
-                You are a visual diagram generator. Create a structured mindmap hierarchy from the text below.
-                
-                FORMAT RULES:
-                Line 1 must be: ROOT: [Central Topic Name]
-                Followed by 3 to 5 branch lines formatted exactly as:
-                BRANCH: [Branch Title] | [Sub-concept 1], [Sub-concept 2], [Sub-concept 3]
-                
-                - STRICT: Do NOT use asterisks (** or *), hashtags (#), backticks, or other markdown.
-                
-                Material:
-                $content
-            """.trimIndent()
+    suspend fun simplifyNote(content: String): String = withContext(Dispatchers.IO) {
+        if (BuildConfig.GEMINI_API_KEY.isBlank()) {
+            return@withContext "API Key missing in local.properties."
         }
-
-        return@withContext try {
-            val model = GenerativeModel(
-                modelName = "gemini-3-flash-preview",
-                apiKey = rawApiKey,
+        try {
+            val response = model.generateContent(
+                """
+                You are a concise study tutor.
+                Simplify and explain the following study notes into high-impact key takeaways.
+                
+                RULES:
+                - Do NOT use markdown asterisks (**) or hashtags (#).
+                - Use clear bullet points (• ) for key points.
+                - Keep it simple, clear, and direct.
+                
+                Content:
+                $content
+                """.trimIndent()
             )
-            val response = model.generateContent(prompt)
-            sanitizeText(response.text ?: "No response generated.")
+            sanitizeText(response.text ?: "Could not simplify content.")
         } catch (e: Exception) {
-            Log.e("GeminiService", "Gemini API request failed", e)
-            "AI Processing Failed: ${e.message ?: "Unable to connect to Gemini service."}"
+            "Error generating summary: ${e.localizedMessage ?: "Unknown error"}"
         }
     }
 
-    fun parseMindmapData(rawText: String, defaultTitle: String): MindmapData {
-        var root = defaultTitle.ifBlank { "Main Topic" }
-        val branches = mutableListOf<MindmapBranch>()
+    suspend fun generateFlashcards(content: String): List<Flashcard> = withContext(Dispatchers.IO) {
+        if (BuildConfig.GEMINI_API_KEY.isBlank()) return@withContext emptyList()
+        try {
+            val prompt = """
+                Generate 4-6 study flashcards from the text below.
+                Return ONLY a valid JSON array of objects with keys "question" and "answer".
+                Do not include markdown backticks or extra text.
+                
+                Text:
+                $content
+            """.trimIndent()
 
-        rawText.lines().forEach { line ->
-            val trimmed = line.trim()
-            when {
-                trimmed.startsWith("ROOT:", ignoreCase = true) -> {
-                    root = trimmed.substringAfter(":").trim().ifBlank { root }
-                }
-                trimmed.startsWith("BRANCH:", ignoreCase = true) -> {
-                    val content = trimmed.substringAfter(":")
-                    val parts = content.split("|").map { it.trim() }
-                    val branchTitle = parts.getOrNull(0) ?: "Topic"
-                    val subItems = parts.getOrNull(1)
-                        ?.split(",")
-                        ?.map { it.trim() }
-                        ?.filter { it.isNotBlank() }
-                        ?: emptyList()
-                    branches.add(MindmapBranch(branchTitle, subItems))
-                }
-            }
+            val response = model.generateContent(prompt)
+            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "[]"
+            jsonParser.decodeFromString<List<Flashcard>>(raw)
+        } catch (e: Exception) {
+            listOf(
+                Flashcard(
+                    question = "Key Concept",
+                    answer = content.take(120) + "..."
+                )
+            )
         }
-
-        if (branches.isEmpty()) {
-            val lines = rawText.lines().filter { it.isNotBlank() }
-            root = lines.firstOrNull() ?: defaultTitle
-            lines.drop(1).take(4).forEach { item ->
-                branches.add(MindmapBranch(item.replace("•", "").trim(), emptyList()))
-            }
-        }
-
-        return MindmapData(root, branches)
     }
 
-    companion object {
-        fun sanitizeText(raw: String): String {
-            return raw
-                .replace(Regex("```[a-zA-Z]*"), "")
-                .replace("```", "")
-                .replace(Regex("(?m)^#{1,6}\\s*"), "")
-                .replace(Regex("\\*+"), "")
-                .replace("`", "")
-                .replace(Regex("(?m)^[-+]\\s+"), "• ")
-                .replace(Regex("\n{3,}"), "\n\n")
-                .trim()
+    suspend fun generateMindmap(content: String): MindmapData = withContext(Dispatchers.IO) {
+        if (BuildConfig.GEMINI_API_KEY.isBlank()) {
+            return@withContext MindmapData(rootTitle = "Study Topic", branches = emptyList())
+        }
+        try {
+            val prompt = """
+                Convert the following notes into a structured mindmap hierarchy.
+                Return ONLY a valid JSON object matching this exact schema:
+                {
+                  "rootTitle": "Main Subject Title",
+                  "branches": [
+                    {
+                      "title": "Branch Name",
+                      "subItems": ["Detail 1", "Detail 2"]
+                    }
+                  ]
+                }
+                Do not wrap in markdown tags. Return raw JSON.
+                
+                Notes:
+                $content
+            """.trimIndent()
+
+            val response = model.generateContent(prompt)
+            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+            jsonParser.decodeFromString<MindmapData>(raw)
+        } catch (e: Exception) {
+            MindmapData(
+                rootTitle = "Study Summary",
+                branches = listOf(
+                    MindmapBranch(title = "Core Concept", subItems = listOf(content.take(80)))
+                )
+            )
+        }
+    }
+
+    suspend fun generateQuiz(content: String): List<QuizQuestion> = withContext(Dispatchers.IO) {
+        if (BuildConfig.GEMINI_API_KEY.isBlank()) return@withContext emptyList()
+        try {
+            val prompt = """
+                Create 4 multiple-choice quiz questions based on the text below.
+                Return ONLY a valid JSON array of objects with this exact structure:
+                [
+                  {
+                    "question": "Question text here?",
+                    "options": ["Option A", "Option B", "Option C", "Option D"],
+                    "correctAnswer": "Option A",
+                    "explanation": "Explanation why Option A is correct."
+                  }
+                ]
+                Do not add markdown codeblocks. Return pure JSON.
+                
+                Text:
+                $content
+            """.trimIndent()
+
+            val response = model.generateContent(prompt)
+            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "[]"
+            jsonParser.decodeFromString<List<QuizQuestion>>(raw)
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }

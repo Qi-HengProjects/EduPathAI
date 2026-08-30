@@ -8,24 +8,31 @@ import kotlinx.coroutines.withContext
 class NoteRepository {
     private val client = SupabaseProvider.client
 
-    suspend fun getFolders(): List<SubjectFolder> = withContext(Dispatchers.IO) {
+    suspend fun getFolders(): List<NoteFolder> = withContext(Dispatchers.IO) {
         val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
         try {
             client.from("note_folders").select {
                 filter { eq("user_id", currentUserId) }
-            }.decodeList<SubjectFolder>()
+            }.decodeList<NoteFolder>()
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    suspend fun addFolder(name: String) = withContext(Dispatchers.IO) {
-        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
-        val newFolder = SubjectFolder(
+    suspend fun addFolder(name: String, colorHex: String = "#3B82F6"): NoteFolder? = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext null
+        val newFolder = NoteFolder(
             userId = currentUserId,
-            subjectName = name
+            name = name,
+            colorHex = colorHex
         )
-        client.from("note_folders").insert(newFolder)
+        try {
+            client.from("note_folders").insert(newFolder) {
+                select()
+            }.decodeSingle<NoteFolder>()
+        } catch (e: Exception) {
+            null
+        }
     }
 
     suspend fun deleteFolder(folderId: String) = withContext(Dispatchers.IO) {

@@ -45,7 +45,7 @@ fun AdaptiveAppScaffold(
     val layoutDirection = LocalLayoutDirection.current
 
     if (isLandscape) {
-        // LANDSCAPE MODE: Left Navigation Rail
+        // Landscape Mode: Left Navigation Rail
         Row(modifier = Modifier.fillMaxSize()) {
             NavigationRail(
                 modifier = Modifier
@@ -54,7 +54,7 @@ fun AdaptiveAppScaffold(
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
                 Spacer(modifier = Modifier.weight(1f))
-                AppDestination.entries.forEach { destination ->
+                AppDestination.values().forEach { destination ->
                     NavigationRailItem(
                         selected = currentDestination == destination,
                         onClick = { onNavigate(destination) },
@@ -76,19 +76,20 @@ fun AdaptiveAppScaffold(
             }
         }
     } else {
-        // PORTRAIT MODE: 4-Item Bottom Navigation Bar
+        // Portrait Mode: Clean 4-Item Bottom Navigation Bar
         Scaffold(
             bottomBar = {
                 if (!isKeyboardOpen) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
-                        AppDestination.entries.forEach { destination ->
+                        AppDestination.values().forEach { destination ->
                             NavigationBarItem(
                                 selected = currentDestination == destination,
                                 onClick = { onNavigate(destination) },
                                 icon = { Icon(destination.icon, contentDescription = destination.label) },
-                                label = { Text(destination.label) }
+                                label = { Text(destination.label, maxLines = 1) },
+                                alwaysShowLabel = true
                             )
                         }
                     }

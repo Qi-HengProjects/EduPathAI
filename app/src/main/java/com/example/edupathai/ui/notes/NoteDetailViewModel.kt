@@ -2,145 +2,267 @@ package com.example.edupathai.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.edupathai.data.*
+import com.example.edupathai.data.Flashcard
+import com.example.edupathai.data.GeminiService
+import com.example.edupathai.data.MindmapData
+import com.example.edupathai.data.NoteBookEntry
+import com.example.edupathai.data.NoteRepository
+import com.example.edupathai.data.QuizQuestion
+import com.example.edupathai.data.ScheduleRepository
+import com.example.edupathai.data.ScheduleTask
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+enum class AiIslandMode {
+    NONE, SIMPLIFY, FLASHCARDS, MINDMAP, QUIZ
+}
 
 data class NoteDetailUiState(
-    val noteId: String? = null,
-    val folderId: String = "",
-    val title: String = "",
-    val content: String = "",
+    val notes: List<NoteBookEntry> = emptyList(),
+    val currentNote: NoteBookEntry? = null,
     val isLoading: Boolean = false,
     val isAiProcessing: Boolean = false,
-    val activeAiAction: AiPromptType? = null,
-    val simplifiedJargon: String? = null,
-    val activeRecallQuiz: String? = null,
-    val mindmapData: MindmapData? = null, // Visual Node Diagram Data
-    val snackbarMessage: String? = null
+    val aiMode: AiIslandMode = AiIslandMode.NONE,
+    val simplifiedText: String? = null,
+    val flashcards: List<Flashcard> = emptyList(),
+    val mindmapData: MindmapData? = null,
+    val quizQuestions: List<QuizQuestion> = emptyList(),
+    val userNotification: String? = null,
+    val errorMessage: String? = null
 )
 
 class NoteDetailViewModel(
-    private val folderId: String,
+    val folderId: String,
     private val repository: NoteRepository = NoteRepository(),
-    private val scheduleRepository: ScheduleRepository = ScheduleRepository(),
-    private val geminiService: GeminiService = GeminiService()
+    private val scheduleRepository: ScheduleRepository = ScheduleRepository()
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(NoteDetailUiState(folderId = folderId))
+    private val _uiState = MutableStateFlow(NoteDetailUiState())
     val uiState: StateFlow<NoteDetailUiState> = _uiState.asStateFlow()
 
-    fun updateTitle(newTitle: String) {
-        _uiState.update { it.copy(title = newTitle) }
+    init {
+        loadNotes()
     }
 
-    fun updateContent(newContent: String) {
-        _uiState.update { it.copy(content = newContent) }
+    fun loadNotes() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                val notes = repository.getNotes(folderId)
+                val selected = notes.firstOrNull() ?: NoteBookEntry(
+                    folderId = folderId,
+                    title = "Untitled Note",
+                    contentMarkdown = ""
+                )
+                _uiState.update {
+                    it.copy(
+                        notes = notes,
+                        currentNote = selected,
+                        isLoading = false
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
+            }
+        }
     }
 
-    fun runAiAction(actionType: AiPromptType) {
-        val currentContent = _uiState.value.content
-        if (currentContent.trim().isBlank()) {
-            _uiState.update { it.copy(snackbarMessage = "Please write some note content first.") }
+    fun selectNote(note: NoteBookEntry) {
+        _uiState.update {
+            it.copy(
+                currentNote = note,
+                aiMode = AiIslandMode.NONE,
+                simplifiedText = null,
+                flashcards = emptyList(),
+                mindmapData = null,
+                quizQuestions = emptyList()
+            )
+        }
+    }
+
+    fun createNewNote() {
+        val newNote = NoteBookEntry(
+            folderId = folderId,
+            title = "New Note",
+            contentMarkdown = ""
+        )
+        _uiState.update {
+            it.copy(
+                currentNote = newNote,
+                aiMode = AiIslandMode.NONE
+            )
+        }
+    }
+
+    fun updateCurrentNoteContent(title: String, content: String) {
+        val active = _uiState.value.currentNote ?: NoteBookEntry(folderId = folderId)
+        _uiState.update {
+            it.copy(
+                currentNote = active.copy(
+                    title = title,
+                    contentMarkdown = content
+                )
+            )
+        }
+    }
+
+    fun saveCurrentNote(onComplete: () -> Unit = {}) {
+        val noteToSave = _uiState.value.currentNote ?: return
+        viewModelScope.launch {
+            try {
+                repository.saveNote(noteToSave)
+                val updatedNotes = repository.getNotes(folderId)
+                _uiState.update {
+                    it.copy(
+                        notes = updatedNotes,
+                        userNotification = "Note saved successfully"
+                    )
+                }
+                onComplete()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to save: ${e.message}") }
+            }
+        }
+    }
+
+    fun deleteCurrentNote() {
+        val noteId = _uiState.value.currentNote?.id ?: return
+        viewModelScope.launch {
+            try {
+                repository.deleteNote(noteId)
+                loadNotes()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun simplifyNote() {
+        val content = _uiState.value.currentNote?.contentMarkdown.orEmpty()
+        if (content.isBlank()) {
+            _uiState.update { it.copy(userNotification = "Note content is empty") }
             return
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isAiProcessing = true, activeAiAction = actionType) }
-
-            val resultText = try {
-                geminiService.processNoteContent(actionType, currentContent)
-            } catch (e: Throwable) {
-                "Error processing AI request: ${e.message}"
-            }
-
-            _uiState.update { state ->
-                when (actionType) {
-                    AiPromptType.SIMPLIFY_JARGON -> state.copy(
-                        isAiProcessing = false,
-                        activeAiAction = null,
-                        simplifiedJargon = resultText,
-                        snackbarMessage = "Simplified explanation ready!"
+            _uiState.update { it.copy(isAiProcessing = true, aiMode = AiIslandMode.SIMPLIFY) }
+            try {
+                val result = GeminiService.simplifyNote(content)
+                _uiState.update {
+                    it.copy(
+                        simplifiedText = result,
+                        isAiProcessing = false
                     )
-                    AiPromptType.GENERATE_QUIZ -> state.copy(
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
                         isAiProcessing = false,
-                        activeAiAction = null,
-                        activeRecallQuiz = resultText,
-                        snackbarMessage = "Quiz flashcards ready!"
-                    )
-                    AiPromptType.MINDMAP -> state.copy(
-                        isAiProcessing = false,
-                        activeAiAction = null,
-                        mindmapData = geminiService.parseMindmapData(resultText, state.title),
-                        snackbarMessage = "Visual Mindmap diagram generated!"
+                        errorMessage = "AI Simplify error: ${e.message}"
                     )
                 }
             }
         }
     }
 
-    fun scheduleReviewTask(actionType: AiPromptType) {
+    fun generateFlashcards() {
+        val content = _uiState.value.currentNote?.contentMarkdown.orEmpty()
+        if (content.isBlank()) {
+            _uiState.update { it.copy(userNotification = "Note content is empty") }
+            return
+        }
+
         viewModelScope.launch {
-            val noteTitle = _uiState.value.title.ifBlank { "Study Notes" }
-            val taskTitle = when (actionType) {
-                AiPromptType.SIMPLIFY_JARGON -> "Review Simplified: $noteTitle"
-                AiPromptType.GENERATE_QUIZ -> "Practice Flashcards: $noteTitle"
-                AiPromptType.MINDMAP -> "Study Mindmap: $noteTitle"
-            }
-
-            val today = LocalDate.now().toString()
-            val task = ScheduleTask(
-                title = taskTitle,
-                startTime = "${today}T14:00:00",
-                endTime = "${today}T14:45:00",
-                energyLevel = "medium",
-                taskType = "study",
-                isCompleted = false
-            )
-
+            _uiState.update { it.copy(isAiProcessing = true, aiMode = AiIslandMode.FLASHCARDS) }
             try {
-                scheduleRepository.addTask(task)
-                _uiState.update { it.copy(snackbarMessage = "Added to Daily Timeline!") }
+                val cards = GeminiService.generateFlashcards(content)
+                _uiState.update {
+                    it.copy(
+                        flashcards = cards,
+                        isAiProcessing = false
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.update { it.copy(snackbarMessage = "Failed to schedule: ${e.message}") }
+                _uiState.update {
+                    it.copy(
+                        isAiProcessing = false,
+                        errorMessage = "Flashcards error: ${e.message}"
+                    )
+                }
             }
         }
     }
 
-    fun clearAiIsland(actionType: AiPromptType) {
-        _uiState.update { state ->
-            when (actionType) {
-                AiPromptType.SIMPLIFY_JARGON -> state.copy(simplifiedJargon = null)
-                AiPromptType.GENERATE_QUIZ -> state.copy(activeRecallQuiz = null)
-                AiPromptType.MINDMAP -> state.copy(mindmapData = null)
-            }
+    fun generateMindmap() {
+        val content = _uiState.value.currentNote?.contentMarkdown.orEmpty()
+        if (content.isBlank()) {
+            _uiState.update { it.copy(userNotification = "Note content is empty") }
+            return
         }
-    }
 
-    fun clearSnackbar() {
-        _uiState.update { it.copy(snackbarMessage = null) }
-    }
-
-    fun saveNote(onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
-            val state = _uiState.value
-            val entry = NoteBookEntry(
-                id = state.noteId,
-                folderId = state.folderId,
-                title = state.title.ifBlank { "Untitled Note" },
-                contentMarkdown = state.content
-            )
+            _uiState.update { it.copy(isAiProcessing = true, aiMode = AiIslandMode.MINDMAP) }
             try {
-                repository.saveNote(entry)
-                _uiState.update { it.copy(snackbarMessage = "Note saved successfully!") }
-                onSuccess()
+                val map = GeminiService.generateMindmap(content)
+                _uiState.update {
+                    it.copy(
+                        mindmapData = map,
+                        isAiProcessing = false
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.update { it.copy(snackbarMessage = "Failed to save: ${e.message}") }
+                _uiState.update {
+                    it.copy(
+                        isAiProcessing = false,
+                        errorMessage = "Mindmap error: ${e.message}"
+                    )
+                }
             }
         }
+    }
+
+    fun scheduleNoteTask(taskPrefix: String = "Review") {
+        val noteTitle = _uiState.value.currentNote?.title ?: "Note"
+        viewModelScope.launch {
+            try {
+                val now = LocalDateTime.now()
+                val formatter = DateTimeFormatter.ofPattern("HH:mm")
+                val startTime = now.plusHours(1).format(formatter)
+                val endTime = now.plusHours(2).format(formatter)
+
+                val task = ScheduleTask(
+                    title = "$taskPrefix: $noteTitle",
+                    startTime = startTime,
+                    endTime = endTime,
+                    energyLevel = "medium",
+                    colorHex = "#3B82F6"
+                )
+                scheduleRepository.createTask(task)
+                _uiState.update { it.copy(userNotification = "Scheduled to Daily Timeline!") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Scheduling failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun dismissAiIsland() {
+        _uiState.update {
+            it.copy(
+                aiMode = AiIslandMode.NONE,
+                simplifiedText = null,
+                flashcards = emptyList(),
+                mindmapData = null,
+                quizQuestions = emptyList()
+            )
+        }
+    }
+
+    fun clearNotification() {
+        _uiState.update { it.copy(userNotification = null, errorMessage = null) }
     }
 }

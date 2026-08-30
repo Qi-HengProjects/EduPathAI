@@ -2,8 +2,8 @@ package com.example.edupathai.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.edupathai.data.NoteFolder
 import com.example.edupathai.data.NoteRepository
-import com.example.edupathai.data.SubjectFolder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 
 data class NotesUiState(
     val isLoading: Boolean = false,
-    val folders: List<SubjectFolder> = emptyList(),
+    val folders: List<NoteFolder> = emptyList(),
     val searchQuery: String = "",
     val errorMessage: String? = null
 )
@@ -45,11 +45,22 @@ class NotesViewModel(
         }
     }
 
-    fun createFolder(name: String) {
+    fun createFolder(name: String, colorHex: String = "#3B82F6") {
         viewModelScope.launch {
             try {
-                repository.addFolder(name)
+                repository.addFolder(name, colorHex)
                 // Refresh list after adding
+                loadFolders()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun deleteFolder(id: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteFolder(id)
                 loadFolders()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }

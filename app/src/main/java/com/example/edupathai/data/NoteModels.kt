@@ -4,37 +4,50 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class SubjectFolder(
-    val id: String? = null,
-
-    @SerialName("user_id")
-    val userId: String? = null,
-
-    @SerialName("subject_name")
-    val subjectName: String,
-
-    @SerialName("note_count")
-    val noteCount: Int = 0,
-
-    @SerialName("created_at")
-    val createdAt: String? = null
+data class NoteFolder(
+    val id: String = "",
+    @SerialName("user_id") val userId: String? = null,
+    val name: String = "",
+    @SerialName("color_hex") val colorHex: String = "#3B82F6",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null
 )
 
 @Serializable
 data class NoteBookEntry(
     val id: String? = null,
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("folder_id") val folderId: String = "",
+    val title: String = "Untitled Note",
+    @SerialName("content") val contentMarkdown: String = "",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null
+) {
+    val content: String get() = contentMarkdown
+}
 
-    @SerialName("user_id")
-    val userId: String? = null,
+@Serializable
+data class Flashcard(
+    val question: String = "",
+    val answer: String = ""
+)
 
-    @SerialName("folder_id")
-    val folderId: String,
+@Serializable
+data class MindmapData(
+    val rootTitle: String = "",
+    val branches: List<MindmapBranch> = emptyList()
+)
 
-    val title: String,
+@Serializable
+data class MindmapBranch(
+    val title: String = "",
+    val subItems: List<String> = emptyList()
+)
 
-    @SerialName("content_markdown")
-    val contentMarkdown: String = "",
-
-    @SerialName("created_at")
-    val createdAt: String? = null
+@Serializable
+data class QuizQuestion(
+    val question: String = "",
+    val options: List<String> = emptyList(),
+    val correctAnswer: String = "",
+    val explanation: String = ""
 )

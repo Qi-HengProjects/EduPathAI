@@ -10,37 +10,45 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.edupathai.data.ChatMessage
-import com.example.edupathai.data.ScheduleRepository
-import com.example.edupathai.data.ScheduleTask
-import kotlinx.coroutines.launch
-import java.time.LocalDate
+import com.example.edupathai.data.NoteFolder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
     onNavigateToHistory: () -> Unit = {},
-    onNavigateBack: () -> Unit = {},
+    onNavigateBack: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var inputText by remember { mutableStateOf("") }
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val scheduleRepository = remember { ScheduleRepository() }
+    val listState = rememberLazyListState()
+
+    var inputText by rememberSaveable { mutableStateOf("") }
+
+    // Save to Notes Dialog State
+    var showSaveNoteDialog by rememberSaveable { mutableStateOf(false) }
+    var selectedNoteContent by rememberSaveable { mutableStateOf("") }
+    var selectedNoteTitle by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(uiState.actionFeedbackMessage) {
+        uiState.actionFeedbackMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearFeedbackMessage()
+        }
+    }
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
@@ -49,19 +57,18 @@ fun ChatScreen(
     }
 
     Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0), // Prevents double insets
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text(
-                            text = "AI Study Companion",
+                            text = "AI Study Assistant",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Ask questions or build study routines",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Ask questions, generate study notes & plans",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -73,82 +80,89 @@ fun ChatScreen(
                 },
                 actions = {
                     IconButton(onClick = onNavigateToHistory) {
-                        Icon(Icons.Default.History, contentDescription = "History")
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = "Chat History"
+                        )
                     }
                     IconButton(onClick = { viewModel.startNewSession() }) {
-                        Icon(Icons.Default.Add, contentDescription = "New Chat")
+                        Icon(
+                            imageVector = Icons.Default.AddComment,
+                            contentDescription = "New Session",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             )
         }
-    ) { padding ->
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = padding.calculateTopPadding())
-                .imePadding() // Pushes the input bar cleanly above the keyboard
+                .padding(paddingValues)
         ) {
-            // Chat Messages List
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(vertical = 16.dp)
             ) {
-                item { Spacer(modifier = Modifier.height(8.dp)) }
-
                 if (uiState.messages.isEmpty()) {
                     item {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 40.dp),
+                                .padding(top = 80.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "👋 Hello! I'm your AI Study Assistant.\nAsk me about difficult topics or request a study plan.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    text = "How can I help your studies today?",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Ask to explain concepts, solve problems, or plan study blocks.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
 
                 items(uiState.messages) { message ->
                     ChatMessageBubble(
-                        message = message
-                    ) { snippet ->
-                        coroutineScope.launch {
-                            try {
-                                val today = LocalDate.now().toString()
-                                val task = ScheduleTask(
-                                    title = "AI Goal: $snippet",
-                                    startTime = "${today}T15:00:00",
-                                    endTime = "${today}T16:00:00",
-                                    energyLevel = "medium",
-                                    taskType = "study",
-                                    isCompleted = false
-                                )
-                                scheduleRepository.addTask(task)
-                                Toast.makeText(context, "Added to Daily Timeline!", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Failed to schedule: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
+                        message = message,
+                        onSaveToNote = { content ->
+                            selectedNoteContent = content
+                            selectedNoteTitle = "AI Note: " + content.take(24).replace("\n", " ").trim() + "..."
+                            viewModel.loadAvailableFolders()
+                            showSaveNoteDialog = true
                         }
-                    }
+                    )
                 }
 
                 if (uiState.isLoading) {
                     item {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(start = 8.dp)
                         ) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "AI is thinking...",
                                 style = MaterialTheme.typography.bodySmall,
@@ -157,11 +171,8 @@ fun ChatScreen(
                         }
                     }
                 }
-
-                item { Spacer(modifier = Modifier.height(8.dp)) }
             }
 
-            // Chat Input Bar (Sits flush with the keyboard)
             Surface(
                 tonalElevation = 3.dp,
                 modifier = Modifier.fillMaxWidth()
@@ -170,18 +181,17 @@ fun ChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text("Ask something or request a plan...") },
+                        placeholder = { Text("Ask a question or request a study plan...") },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(24.dp),
-                        maxLines = 4
+                        maxLines = 4,
+                        shape = RoundedCornerShape(24.dp)
                     )
-
-                    Spacer(modifier = Modifier.width(8.dp))
 
                     IconButton(
                         onClick = {
@@ -192,22 +202,46 @@ fun ChatScreen(
                         },
                         enabled = inputText.isNotBlank() && !uiState.isLoading,
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
+                            .size(48.dp)
                             .background(
-                                if (inputText.isNotBlank()) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
+                                color = if (inputText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = CircleShape
                             )
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            imageVector = Icons.Default.Send,
                             contentDescription = "Send",
-                            tint = if (inputText.isNotBlank()) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (inputText.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
+        }
+
+        if (showSaveNoteDialog) {
+            SaveAiToNotesDialog(
+                initialTitle = selectedNoteTitle,
+                initialContent = selectedNoteContent,
+                availableFolders = uiState.availableFolders,
+                isSaving = uiState.isSavingNote,
+                onDismiss = { showSaveNoteDialog = false },
+                onSave = { folderId, title, content ->
+                    viewModel.saveAiResponseToNotes(
+                        folderId = folderId,
+                        noteTitle = title,
+                        noteContent = content,
+                        onSuccess = { showSaveNoteDialog = false }
+                    )
+                },
+                onCreateFolderAndSave = { folderName, title, content ->
+                    viewModel.createFolderAndSaveNote(
+                        folderName = folderName,
+                        noteTitle = title,
+                        noteContent = content,
+                        onSuccess = { showSaveNoteDialog = false }
+                    )
+                }
+            )
         }
     }
 }
@@ -215,9 +249,11 @@ fun ChatScreen(
 @Composable
 fun ChatMessageBubble(
     message: ChatMessage,
-    onScheduleToTimeline: (String) -> Unit
+    onSaveToNote: (String) -> Unit
 ) {
-    val isUser = message.isUser
+    val isUser = message.sender.equals("user", ignoreCase = true)
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -230,44 +266,202 @@ fun ChatMessageBubble(
                 bottomStart = if (isUser) 16.dp else 4.dp,
                 bottomEnd = if (isUser) 4.dp else 16.dp
             ),
-            color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 1.dp,
-            modifier = Modifier.widthIn(max = 300.dp)
+            color = if (isUser) MaterialTheme.colorScheme.primary else Color(0xFF1E293B),
+            modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(14.dp)) {
                 Text(
                     text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else Color.White,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
         }
 
-        if (!isUser && message.text.isNotBlank()) {
+        if (!isUser) {
             Spacer(modifier = Modifier.height(4.dp))
-            SuggestionChip(
-                onClick = {
-                    val summary = message.text.lines().firstOrNull()?.take(30) ?: "AI Study Session"
-                    onScheduleToTimeline(summary)
-                },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.CalendarMonth,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp)
-                    )
-                },
-                label = {
-                    Text(
-                        text = "Add to Daily Timeline",
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                },
-                shape = RoundedCornerShape(8.dp),
-                colors = SuggestionChipDefaults.suggestionChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AssistChip(
+                    onClick = { onSaveToNote(message.text) },
+                    label = { Text("Save to Note", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.BookmarkAdd,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    modifier = Modifier.height(28.dp)
                 )
-            )
+
+                AssistChip(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(message.text))
+                        Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
+                    },
+                    label = { Text("Copy", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    },
+                    modifier = Modifier.height(28.dp)
+                )
+            }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SaveAiToNotesDialog(
+    initialTitle: String,
+    initialContent: String,
+    availableFolders: List<NoteFolder>,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (folderId: String, title: String, content: String) -> Unit,
+    onCreateFolderAndSave: (folderName: String, title: String, content: String) -> Unit
+) {
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    var content by rememberSaveable { mutableStateOf(initialContent) }
+    var selectedFolderId by rememberSaveable {
+        mutableStateOf(availableFolders.firstOrNull()?.id ?: "")
+    }
+    var isCreatingNewFolder by rememberSaveable {
+        mutableStateOf(availableFolders.isEmpty())
+    }
+    var newFolderName by rememberSaveable { mutableStateOf("") }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.BookmarkAdd,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Save to Notebook", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (!isCreatingNewFolder && availableFolders.isNotEmpty()) {
+                    ExposedDropdownMenuBox(
+                        expanded = dropdownExpanded,
+                        onExpandedChange = { dropdownExpanded = !dropdownExpanded }
+                    ) {
+                        val currentFolderName = availableFolders.find { it.id == selectedFolderId }?.name ?: "Select Subject Folder"
+                        OutlinedTextField(
+                            value = currentFolderName,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Subject Notebook Folder") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false }
+                        ) {
+                            availableFolders.forEach { folder ->
+                                val fId = folder.id ?: ""
+                                DropdownMenuItem(
+                                    text = { Text(folder.name) },
+                                    onClick = {
+                                        selectedFolderId = fId
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = { isCreatingNewFolder = true },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("+ Create New Folder", style = MaterialTheme.typography.labelSmall)
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { newFolderName = it },
+                        label = { Text("New Subject Folder Name *") },
+                        placeholder = { Text("e.g., Computer Science, Math") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (availableFolders.isNotEmpty()) {
+                        TextButton(
+                            onClick = { isCreatingNewFolder = false },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Choose Existing Folder", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Note Title *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text("Note Content") },
+                    minLines = 4,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (isCreatingNewFolder) {
+                        onCreateFolderAndSave(newFolderName, title, content)
+                    } else {
+                        onSave(selectedFolderId, title, content)
+                    }
+                },
+                enabled = !isSaving && title.isNotBlank() && (
+                        (!isCreatingNewFolder && selectedFolderId.isNotBlank()) ||
+                                (isCreatingNewFolder && newFolderName.isNotBlank())
+                        )
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                } else {
+                    Text("Save Note")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) {
+                Text("Cancel")
+            }
+        }
+    )
 }

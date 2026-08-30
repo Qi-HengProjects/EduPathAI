@@ -43,7 +43,7 @@ class ScheduleViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
-                val fetchedTasks = repository.fetchTasks()
+                val fetchedTasks = repository.getTasks()
                 _uiState.update { it.copy(tasks = fetchedTasks, isLoading = false) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
