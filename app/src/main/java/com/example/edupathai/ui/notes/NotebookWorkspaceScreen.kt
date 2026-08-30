@@ -4,13 +4,14 @@ import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,17 +20,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.edupathai.data.Flashcard
 import com.example.edupathai.data.MindmapData
+import com.example.edupathai.data.QuizQuestion
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotebookWorkspaceScreen(
     subjectName: String,
@@ -38,9 +38,7 @@ fun NotebookWorkspaceScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
 
-    // Sync notification messages
     LaunchedEffect(uiState.userNotification) {
         uiState.userNotification?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
@@ -59,24 +57,48 @@ fun NotebookWorkspaceScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = subjectName,
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Column {
+                        Text(
+                            text = subjectName.ifBlank { "Subject Workspace" },
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "${uiState.notes.size} note entries",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.createNewNote() }) {
+                        Icon(
+                            imageVector = Icons.Default.NoteAdd,
+                            contentDescription = "New Note",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(onClick = { viewModel.saveCurrentNote() }) {
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = "Save Note",
                             tint = MaterialTheme.colorScheme.primary
                         )
+                    }
+                    if (uiState.currentNote?.id != null) {
+                        IconButton(onClick = { viewModel.deleteCurrentNote() }) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteOutline,
+                                contentDescription = "Delete Note",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             )
@@ -86,250 +108,529 @@ fun NotebookWorkspaceScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            val currentNote = uiState.currentNote ?: return@Scaffold
+            // Note Tabs Selector Row
+            if (uiState.notes.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(uiState.notes, key = { it.id ?: it.title }) { note ->
+                        val isSelected = uiState.currentNote?.id == note.id
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { viewModel.selectNote(note) },
+                            label = {
+                                Text(
+                                    text = note.title.ifBlank { "Untitled" },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            leadingIcon = {
+                                if (isSelected) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        )
+                    }
+                }
+            }
 
-            // Note Title Input
-            OutlinedTextField(
-                value = currentNote.title,
-                onValueChange = { viewModel.updateCurrentNoteContent(it, currentNote.contentMarkdown) },
-                label = { Text("Note Title") },
-                placeholder = { Text("e.g., Chapter 4: Cellular Respiration") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
-
-            // Raw Note Content Card
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                ),
+            // Horizontally Scrollable AI Action Toolbar
+            Surface(
+                tonalElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    item {
+                        AssistChip(
+                            onClick = { viewModel.simplifyNote() },
+                            label = { Text("Simplify") },
+                            leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (uiState.aiMode == AiIslandMode.SIMPLIFY) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = { viewModel.generateFlashcards() },
+                            label = { Text("Cards") },
+                            leadingIcon = { Icon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (uiState.aiMode == AiIslandMode.FLASHCARDS) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = { viewModel.generateMindmap() },
+                            label = { Text("Mindmap") },
+                            leadingIcon = { Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (uiState.aiMode == AiIslandMode.MINDMAP) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = { viewModel.generateQuiz() },
+                            label = { Text("Quiz") },
+                            leadingIcon = { Icon(Icons.Default.Quiz, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (uiState.aiMode == AiIslandMode.QUIZ) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Note Content Editor & AI Islands
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                // AI Workspace Card
+                if (uiState.aiMode != AiIslandMode.NONE) {
+                    item {
+                        AiWorkspaceIsland(
+                            uiState = uiState,
+                            viewModel = viewModel
+                        )
+                    }
+                }
+
+                // Title Input
+                item {
+                    OutlinedTextField(
+                        value = uiState.currentNote?.title ?: "",
+                        onValueChange = { newTitle ->
+                            viewModel.updateCurrentNoteContent(
+                                title = newTitle,
+                                content = uiState.currentNote?.contentMarkdown ?: ""
+                            )
+                        },
+                        placeholder = { Text("Note Title...") },
+                        textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Markdown Editor
+                item {
+                    OutlinedTextField(
+                        value = uiState.currentNote?.contentMarkdown ?: "",
+                        onValueChange = { newContent ->
+                            viewModel.updateCurrentNoteContent(
+                                title = uiState.currentNote?.title ?: "",
+                                content = newContent
+                            )
+                        },
+                        placeholder = { Text("Write your notes, lecture summaries, or formulas here...") },
+                        minLines = 14,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AiWorkspaceIsland(
+    uiState: NoteDetailUiState,
+    viewModel: NoteDetailViewModel
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            if (uiState.isAiProcessing) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("AI is processing notes...", style = MaterialTheme.typography.bodyMedium)
+                }
+            } else {
+                when (uiState.aiMode) {
+                    AiIslandMode.SIMPLIFY -> {
+                        SimplifyView(
+                            text = uiState.simplifiedText ?: "No summary available.",
+                            onRegenerate = { viewModel.simplifyNote(forceRegenerate = true) },
+                            onSchedule = { viewModel.scheduleNoteTask("Review Simplified") },
+                            onDismiss = { viewModel.dismissAiIsland() }
+                        )
+                    }
+                    AiIslandMode.FLASHCARDS -> {
+                        FlashcardsView(
+                            flashcards = uiState.flashcards,
+                            onRegenerate = { viewModel.generateFlashcards(forceRegenerate = true) },
+                            onSchedule = { viewModel.scheduleNoteTask("Practice Flashcards") },
+                            onDismiss = { viewModel.dismissAiIsland() }
+                        )
+                    }
+                    AiIslandMode.MINDMAP -> {
+                        uiState.mindmapData?.let { mindmap ->
+                            VisualMindmapCard(
+                                mindmapData = mindmap,
+                                onSchedule = { viewModel.scheduleNoteTask("Review Mindmap") },
+                                onDelete = { viewModel.dismissAiIsland() }
+                            )
+                        }
+                    }
+                    AiIslandMode.QUIZ -> {
+                        InteractiveQuizCard(
+                            questions = uiState.quizQuestions,
+                            currentIndex = uiState.currentQuizIndex,
+                            selectedAnswer = uiState.selectedQuizAnswer,
+                            isSubmitted = uiState.isAnswerSubmitted,
+                            score = uiState.quizScore,
+                            isFinished = uiState.isQuizFinished,
+                            onSelectOption = { viewModel.selectQuizOption(it) },
+                            onNext = { viewModel.nextQuizQuestion() },
+                            onReset = { viewModel.resetQuiz() },
+                            onSchedule = { viewModel.scheduleNoteTask("Practice Quiz") },
+                            onDismiss = { viewModel.dismissAiIsland() }
+                        )
+                    }
+                    AiIslandMode.NONE -> {}
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun InteractiveQuizCard(
+    questions: List<QuizQuestion>,
+    currentIndex: Int,
+    selectedAnswer: String?,
+    isSubmitted: Boolean,
+    score: Int,
+    isFinished: Boolean,
+    onSelectOption: (String) -> Unit,
+    onNext: () -> Unit,
+    onReset: () -> Unit,
+    onSchedule: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (questions.isEmpty()) {
+        Text("No quiz questions generated. Write more notes and tap Quiz again.")
+        return
+    }
+
+    if (isFinished) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.EmojiEvents,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(48.dp)
+            )
+            Text(
+                text = "Quiz Completed!",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Your Score: $score / ${questions.size}",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (score >= questions.size / 2) Color(0xFF10B981) else Color(0xFFEF4444)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onReset,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Retake")
+                }
+                Button(
+                    onClick = onSchedule,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Schedule")
+                }
+            }
+        }
+        return
+    }
+
+    val currentQ = questions.getOrNull(currentIndex) ?: return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Quiz,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Question ${currentIndex + 1} of ${questions.size}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = currentQ.question,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            currentQ.options.forEach { option ->
+                val isSelected = selectedAnswer == option
+                val isCorrect = option.trim().equals(currentQ.correctAnswer.trim(), ignoreCase = true)
+
+                val backgroundColor = when {
+                    !isSubmitted -> if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    isCorrect -> Color(0xFF064E3B)
+                    isSelected && !isCorrect -> Color(0xFF450A0A)
+                    else -> MaterialTheme.colorScheme.surface
+                }
+
+                val borderColor = when {
+                    !isSubmitted -> if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    isCorrect -> Color(0xFF10B981)
+                    isSelected && !isCorrect -> Color(0xFFEF4444)
+                    else -> MaterialTheme.colorScheme.outlineVariant
+                }
+
+                Card(
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = backgroundColor),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+                        .clickable(enabled = !isSubmitted) { onSelectOption(option) }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = option,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        if (isSubmitted) {
+                            if (isCorrect) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Correct",
+                                    tint = Color(0xFF10B981),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Cancel,
+                                    contentDescription = "Incorrect",
+                                    tint = Color(0xFFEF4444),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isSubmitted) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
                     Text(
-                        text = "📝 Raw Note Content",
-                        style = MaterialTheme.typography.titleSmall,
+                        text = "Explanation:",
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = currentNote.contentMarkdown,
-                        onValueChange = { viewModel.updateCurrentNoteContent(currentNote.title, it) },
-                        placeholder = { Text("Write or paste study materials, lecture summaries, or textbook sections here...") },
-                        minLines = 8,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
-            }
-
-            // AI Action Buttons
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
                     Text(
-                        text = "Assistive AI Tools",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AiActionButton(
-                        label = "Simplify",
-                        icon = Icons.Default.Lightbulb,
-                        isLoading = uiState.isAiProcessing && uiState.aiMode == AiIslandMode.SIMPLIFY,
-                        onClick = { viewModel.simplifyNote() },
-                        modifier = Modifier.weight(1f)
-                    )
-                    AiActionButton(
-                        label = "Flashcards",
-                        icon = Icons.Default.Psychology,
-                        isLoading = uiState.isAiProcessing && uiState.aiMode == AiIslandMode.FLASHCARDS,
-                        onClick = { viewModel.generateFlashcards() },
-                        modifier = Modifier.weight(1f)
-                    )
-                    AiActionButton(
-                        label = "Mindmap",
-                        icon = Icons.Default.Schema,
-                        isLoading = uiState.isAiProcessing && uiState.aiMode == AiIslandMode.MINDMAP,
-                        onClick = { viewModel.generateMindmap() },
-                        modifier = Modifier.weight(1f)
+                        text = currentQ.explanation.ifBlank { "Correct answer: ${currentQ.correctAnswer}" },
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
 
-            // 1. Simplified Jargon Island
-            uiState.simplifiedText?.let { text ->
-                AiOutputIsland(
-                    title = "💡 Simplified Explanation",
-                    content = text,
-                    containerColor = Color(0xFF1E293B),
-                    accentColor = Color(0xFF38BDF8),
-                    onSchedule = { viewModel.scheduleNoteTask("Review Simplified") },
-                    onDelete = { viewModel.dismissAiIsland() }
-                )
-            }
-
-            // 2. Flashcards Island
-            if (uiState.flashcards.isNotEmpty()) {
-                AiOutputIsland(
-                    title = "❓ Active Recall Flashcards",
-                    content = uiState.flashcards.joinToString("\n\n") { "Q: ${it.question}\nA: ${it.answer}" },
-                    containerColor = Color(0xFF2E1065),
-                    accentColor = Color(0xFFA78BFA),
-                    onSchedule = { viewModel.scheduleNoteTask("Practice Flashcards") },
-                    onDelete = { viewModel.dismissAiIsland() }
-                )
-            }
-
-            // 3. Visual Connected Mindmap Diagram
-            uiState.mindmapData?.let { data ->
-                VisualMindmapCard(
-                    mindmapData = data,
-                    onSchedule = { viewModel.scheduleNoteTask("Study Mindmap") },
-                    onDelete = { viewModel.dismissAiIsland() }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-    }
-}
-
-@Composable
-fun AiActionButton(
-    label: String,
-    icon: ImageVector,
-    isLoading: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    FilledTonalButton(
-        onClick = onClick,
-        enabled = !isLoading,
-        shape = RoundedCornerShape(10.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
-        modifier = modifier
-    ) {
-        if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-        } else {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = onNext,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(label, style = MaterialTheme.typography.labelMedium)
+                Text(if (currentIndex + 1 < questions.size) "Next Question" else "View Score Results")
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
             }
         }
     }
 }
 
 @Composable
-fun AiOutputIsland(
-    title: String,
-    content: String,
-    containerColor: Color,
-    accentColor: Color,
+fun SimplifyView(
+    text: String,
+    onRegenerate: () -> Unit,
     onSchedule: () -> Unit,
-    onDelete: () -> Unit
+    onDismiss: () -> Unit
 ) {
-    val clipboardManager = LocalClipboardManager.current
-    val context = LocalContext.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("AI Summary", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onRegenerate, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(16.dp))
+                }
+                FilledTonalButton(onClick = onSchedule, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Schedule", style = MaterialTheme.typography.labelSmall)
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(text = text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
 
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = accentColor,
-                    modifier = Modifier.weight(1f)
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+@Composable
+fun FlashcardsView(
+    flashcards: List<Flashcard>,
+    onRegenerate: () -> Unit,
+    onSchedule: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Style, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Flashcards (${flashcards.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onRegenerate, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(16.dp))
+                }
+                FilledTonalButton(onClick = onSchedule, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Schedule", style = MaterialTheme.typography.labelSmall)
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            flashcards.forEachIndexed { index, card ->
+                var revealed by remember { mutableStateOf(false) }
+                Card(
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { revealed = !revealed }
                 ) {
-                    FilledTonalButton(
-                        onClick = onSchedule,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(Icons.Default.EventAvailable, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Schedule", style = MaterialTheme.typography.labelSmall)
-                    }
-
-                    IconButton(
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(content))
-                            Toast.makeText(context, "Copied!", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = accentColor, modifier = Modifier.size(16.dp))
-                    }
-
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(22.dp)
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Q${index + 1}: ${card.question}",
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.bodyMedium
                         )
+                        if (revealed) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "A: ${card.answer}",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            Text(
+                                text = "Tap to flip answer",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 10.dp),
-                color = accentColor.copy(alpha = 0.25f)
-            )
-
-            Text(
-                text = content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
-                lineHeight = 20.sp
-            )
         }
     }
 }
@@ -342,11 +643,11 @@ fun VisualMindmapCard(
     onDelete: () -> Unit
 ) {
     val branchColors = listOf(
-        Color(0xFF10B981) to Color(0xFF064E3B), // Emerald
-        Color(0xFFA855F7) to Color(0xFF3B0764), // Purple
-        Color(0xFFF59E0B) to Color(0xFF451A03), // Amber
-        Color(0xFF06B6D4) to Color(0xFF164E63), // Cyan
-        Color(0xFFEC4899) to Color(0xFF500724)  // Pink
+        Color(0xFF10B981) to Color(0xFF064E3B),
+        Color(0xFFA855F7) to Color(0xFF3B0764),
+        Color(0xFFF59E0B) to Color(0xFF451A03),
+        Color(0xFF06B6D4) to Color(0xFF164E63),
+        Color(0xFFEC4899) to Color(0xFF500724)
     )
 
     Card(
@@ -357,7 +658,6 @@ fun VisualMindmapCard(
             .border(1.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -414,14 +714,12 @@ fun VisualMindmapCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Main Mindmap Frame
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF1E293B), RoundedCornerShape(12.dp))
                     .padding(horizontal = 14.dp, vertical = 16.dp)
             ) {
-                // 1. Central Root Node
                 Box(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
@@ -442,7 +740,6 @@ fun VisualMindmapCard(
                     }
                 }
 
-                // 2. Trunk Connector Line Drop from Root
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -464,7 +761,6 @@ fun VisualMindmapCard(
                     }
                 }
 
-                // 3. Branches with Integrated Structural Spine Lines
                 Column(modifier = Modifier.fillMaxWidth()) {
                     mindmapData.branches.forEachIndexed { index, branch ->
                         val (accent, bg) = branchColors[index % branchColors.size]
@@ -477,7 +773,6 @@ fun VisualMindmapCard(
                                 .height(IntrinsicSize.Min),
                             verticalAlignment = Alignment.Top
                         ) {
-                            // Left Spine & Branch Line Canvas
                             Box(
                                 modifier = Modifier
                                     .width(28.dp)
@@ -528,7 +823,6 @@ fun VisualMindmapCard(
                                 }
                             }
 
-                            // Branch Content Card
                             Card(
                                 shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(containerColor = bg.copy(alpha = 0.65f)),
