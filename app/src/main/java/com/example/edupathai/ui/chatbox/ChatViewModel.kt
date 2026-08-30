@@ -7,11 +7,13 @@ import com.example.edupathai.data.ChatMessage
 import com.example.edupathai.data.ChatRepository
 import com.example.edupathai.data.GeminiService
 import com.google.ai.client.generativeai.GenerativeModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -23,8 +25,7 @@ data class ChatUiState(
 class ChatViewModel(
     private val initialSessionId: String? = null,
     private val initialSessionTitle: String? = null,
-    private val repository: ChatRepository = ChatRepository(),
-    private val geminiService: GeminiService = GeminiService()
+    private val repository: ChatRepository = ChatRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -33,6 +34,13 @@ class ChatViewModel(
         )
     )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    private val generativeModel by lazy {
+        GenerativeModel(
+            modelName = "gemini-3-flash-preview",
+            apiKey = BuildConfig.GEMINI_API_KEY
+        )
+    }
 
     init {
         if (initialSessionId != null) {
@@ -45,8 +53,14 @@ class ChatViewModel(
     fun loadMessages(sessionId: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            val messages = repository.fetchMessages(sessionId)
-            _uiState.update { it.copy(messages = messages, currentSessionId = sessionId, isLoading = false) }
+            try {
+                val fetchedMessages = repository.fetchMessages(sessionId)
+                _uiState.update {
+                    it.copy(isLoading = false, currentSessionId = sessionId, messages = fetchedMessages)
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
+            }
         }
     }
 
@@ -66,17 +80,11 @@ class ChatViewModel(
 
     fun startNewChat() = startNewSession()
 
-    fun updateInput(text: String) {
-        // This ViewModel doesn't seem to hold input state in UIState, but let's add it if needed
-        // For now, satisfy the caller
-    }
-
     fun sendMessage(userText: String) {
         val trimmed = userText.trim()
         if (trimmed.isBlank() || _uiState.value.isLoading) return
 
         val sessionId = _uiState.value.currentSessionId
-
         val userMessage = ChatMessage(
             sessionId = sessionId,
             role = "user",
@@ -96,11 +104,30 @@ class ChatViewModel(
             // Persist user message to Supabase
             repository.saveMessage(userMessage)
 
-            // Call Gemini AI via Service
-            val botResponseText = geminiService.sendChatMessage(
-                history = _uiState.value.messages.dropLast(1), // Don't include the message we just added optimistically
-                userPrompt = trimmed
-            )
+            // Call Gemini AI
+            val botResponseText = try {
+                withContext(Dispatchers.IO) {
+                    if (BuildConfig.GEMINI_API_KEY.isBlank()) {
+                        "API Key missing. Please check your local.properties configuration."
+                    } else {
+                        val response = generativeModel.generateContent(
+                            """
+                            You are an assistive study tutor.
+                            Answer the student's question clearly, directly, and concisely.
+                            
+                            STRICT RULES:
+                            - Do NOT use markdown symbols. Never use asterisks (** or *), hashtags (#), or backticks.
+                            - Use standard clean bullet points (• ) if listing items.
+                            
+                            Student: $trimmed
+                            """.trimIndent()
+                        )
+                        GeminiService.sanitizeText(response.text ?: "Sorry, I couldn't generate a response.")
+                    }
+                }
+            } catch (e: Exception) {
+                "Error connecting to AI: ${e.localizedMessage ?: "Unknown error"}"
+            }
 
             val botMessage = ChatMessage(
                 sessionId = sessionId,

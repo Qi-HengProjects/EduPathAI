@@ -1,60 +1,69 @@
 package com.example.edupathai.data
 
+import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class NoteRepository {
     private val client = SupabaseProvider.client
 
-    // Folders
-    suspend fun getFolders(): List<SubjectFolder> {
-        return client.from("subject_folders").select().decodeList<SubjectFolder>()
-    }
-
-    suspend fun createFolder(folder: SubjectFolder) {
-        client.from("subject_folders").insert(folder)
-    }
-
-    // Notes
-    suspend fun getNotesByFolder(folderId: String): List<NoteBookEntry> {
-        return client.from("notebook_entries").select {
-            filter {
-                eq("folder_id", folderId)
-            }
-        }.decodeList<NoteBookEntry>()
-    }
-
-    suspend fun createNoteEntry(entry: NoteBookEntry): NoteBookEntry {
-        return client.from("notebook_entries").insert(entry) {
-            select()
-        }.decodeSingle<NoteBookEntry>()
-    }
-
-    suspend fun saveNote(entry: NoteBookEntry): NoteBookEntry {
-        return if (entry.id == null) {
-            createNoteEntry(entry)
-        } else {
-            updateNoteEntry(entry.id, entry.title, entry.contentMarkdown)
-            entry
+    suspend fun getFolders(): List<SubjectFolder> = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
+        try {
+            client.from("note_folders").select {
+                filter { eq("user_id", currentUserId) }
+            }.decodeList<SubjectFolder>()
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
-    suspend fun updateNoteEntry(id: String, title: String, contentMarkdown: String) {
-        client.from("notebook_entries").update(
-            {
-                set("title", title)
-                set("content_markdown", contentMarkdown)
-            }
-        ) {
+    suspend fun addFolder(name: String) = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
+        val newFolder = SubjectFolder(
+            userId = currentUserId,
+            subjectName = name
+        )
+        client.from("note_folders").insert(newFolder)
+    }
+
+    suspend fun deleteFolder(folderId: String) = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
+        client.from("note_folders").delete {
             filter {
-                eq("id", id)
+                eq("id", folderId)
+                eq("user_id", currentUserId)
             }
         }
     }
 
-    suspend fun deleteNoteEntry(id: String) {
-        client.from("notebook_entries").delete {
+    suspend fun getNotes(folderId: String): List<NoteBookEntry> = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
+        try {
+            client.from("notes").select {
+                filter {
+                    eq("folder_id", folderId)
+                    eq("user_id", currentUserId)
+                }
+            }.decodeList<NoteBookEntry>()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun saveNote(note: NoteBookEntry) = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
+        val noteWithUser = note.copy(userId = currentUserId)
+        client.from("notes").upsert(noteWithUser)
+    }
+
+    suspend fun deleteNote(noteId: String) = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
+        client.from("notes").delete {
             filter {
-                eq("id", id)
+                eq("id", noteId)
+                eq("user_id", currentUserId)
             }
         }
     }

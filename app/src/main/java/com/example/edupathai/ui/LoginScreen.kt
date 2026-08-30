@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -23,18 +24,18 @@ import kotlinx.coroutines.launch
 fun LoginScreen(
     onLoginSuccess: () -> Unit
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var isSignUp by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var isSignUp by rememberSaveable { mutableStateOf(false) }
+    var isLoading by rememberSaveable { mutableStateOf(false) }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Mandatory Profile Setup State
-    var showBioDialog by remember { mutableStateOf(false) }
-    var newUserId by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var bio by remember { mutableStateOf("") }
-    var isSavingProfile by remember { mutableStateOf(false) }
+    // Mandatory Profile Setup State (Survives screen rotation)
+    var showBioDialog by rememberSaveable { mutableStateOf(false) }
+    var newUserId by rememberSaveable { mutableStateOf("") }
+    var username by rememberSaveable { mutableStateOf("") }
+    var bio by rememberSaveable { mutableStateOf("") }
+    var isSavingProfile by rememberSaveable { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
     val client = SupabaseProvider.client
@@ -122,18 +123,14 @@ fun LoginScreen(
 
                                 val currentUser = client.auth.currentUserOrNull()
 
-                                // 2. Detect duplicate account
-                                if (currentUser == null || currentUser.identities.isNullOrEmpty()) {
+                                if (currentUser != null) {
+                                    newUserId = currentUser.id
                                     isLoading = false
-                                    errorMessage = "An account with this email already exists. Please log in."
-                                    try { client.auth.signOut() } catch (_: Exception) {}
-                                    return@launch
+                                    showBioDialog = true
+                                } else {
+                                    isLoading = false
+                                    errorMessage = "Account created! If confirmation is required, please verify your email."
                                 }
-
-                                // 3. Require user to set up profile
-                                newUserId = currentUser.id
-                                isLoading = false
-                                showBioDialog = true
                             } else {
                                 // Normal Login
                                 client.auth.signInWith(Email) {
@@ -190,10 +187,10 @@ fun LoginScreen(
             }
         }
 
-        // --- Mandatory Profile Setup Dialog (No Skip Option) ---
+        // --- Mandatory Profile Setup Dialog ---
         if (showBioDialog) {
             AlertDialog(
-                onDismissRequest = { /* Cannot dismiss without completing input */ },
+                onDismissRequest = { /* Modal must be submitted */ },
                 title = {
                     Text(
                         text = "Complete Your Profile",
@@ -203,7 +200,7 @@ fun LoginScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
-                            text = "Please enter your name and study goals to set up your AI learning profile:",
+                            text = "Please enter your name and study goals to configure your AI profile:",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -222,7 +219,7 @@ fun LoginScreen(
                             value = bio,
                             onValueChange = { bio = it },
                             label = { Text("Bio / Focus Goals *") },
-                            placeholder = { Text("e.g., CS Student preparing for exams, visual learner") },
+                            placeholder = { Text("e.g., CS Student preparing for exams") },
                             minLines = 3,
                             maxLines = 4,
                             isError = bio.isBlank(),

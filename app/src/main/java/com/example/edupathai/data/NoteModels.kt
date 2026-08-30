@@ -7,6 +7,9 @@ import kotlinx.serialization.Serializable
 data class SubjectFolder(
     val id: String? = null,
 
+    @SerialName("user_id")
+    val userId: String? = null,
+
     @SerialName("subject_name")
     val subjectName: String,
 
@@ -20,6 +23,9 @@ data class SubjectFolder(
 @Serializable
 data class NoteBookEntry(
     val id: String? = null,
+
+    @SerialName("user_id")
+    val userId: String? = null,
 
     @SerialName("folder_id")
     val folderId: String,

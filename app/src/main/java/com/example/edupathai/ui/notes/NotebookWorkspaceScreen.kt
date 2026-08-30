@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,17 +19,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.edupathai.data.AiPromptType
-import com.example.edupathai.data.MindmapBranch
 import com.example.edupathai.data.MindmapData
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,7 +62,7 @@ fun NotebookWorkspaceScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -95,7 +96,7 @@ fun NotebookWorkspaceScreen(
                 shape = RoundedCornerShape(12.dp)
             )
 
-            // Raw Note Content
+            // Raw Note Content Card
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
@@ -196,7 +197,7 @@ fun NotebookWorkspaceScreen(
                 )
             }
 
-            // 3. Visual Graphical Mindmap Diagram
+            // 3. Visual Connected Mindmap Diagram
             uiState.mindmapData?.let { data ->
                 VisualMindmapCard(
                     mindmapData = data,
@@ -211,14 +212,29 @@ fun NotebookWorkspaceScreen(
 }
 
 // ----------------------------------------------------------------
-// GRAPHICAL VISUAL MINDMAP DIAGRAM COMPONENT
+// GRAPHICAL FULLY CONNECTED MINDMAP COMPONENT
 // ----------------------------------------------------------------
+// ----------------------------------------------------------------
+// GRAPHICAL FULLY CONNECTED & ALIGNED MINDMAP COMPONENT
+// ----------------------------------------------------------------
+// ----------------------------------------------------------------
+// GRAPHICAL FULLY CONNECTED & ALIGNED MINDMAP COMPONENT
+// ----------------------------------------------------------------
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VisualMindmapCard(
     mindmapData: MindmapData,
     onSchedule: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val branchColors = listOf(
+        Color(0xFF10B981) to Color(0xFF064E3B), // Emerald
+        Color(0xFFA855F7) to Color(0xFF3B0764), // Purple
+        Color(0xFFF59E0B) to Color(0xFF451A03), // Amber
+        Color(0xFF06B6D4) to Color(0xFF164E63), // Cyan
+        Color(0xFFEC4899) to Color(0xFF500724)  // Pink
+    )
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
@@ -227,13 +243,16 @@ fun VisualMindmapCard(
             .border(1.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header
+            // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Schema,
                         contentDescription = null,
@@ -249,118 +268,217 @@ fun VisualMindmapCard(
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     FilledTonalButton(
                         onClick = onSchedule,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
                     ) {
                         Icon(Icons.Default.EventAvailable, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Schedule", style = MaterialTheme.typography.labelSmall)
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f), CircleShape)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
-                            modifier = Modifier.size(18.dp)
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Graphical Mind Map Node Canvas
+            // Main Mindmap Frame
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF1E293B), RoundedCornerShape(12.dp))
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(horizontal = 14.dp, vertical = 16.dp)
             ) {
-                // 1. Central Root Node Bubble
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFF3B82F6),
-                    tonalElevation = 4.dp,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                // 1. Central Root Node
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "🎯 ${mindmapData.rootTitle}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        textAlign = TextAlign.Center
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color(0xFF2563EB),
+                        shadowElevation = 4.dp
+                    ) {
+                        Text(
+                            text = "🎯 ${mindmapData.rootTitle}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
 
-                // 2. Central Connector Stem
+                // 2. Trunk Connector Line Drop from Root
                 Box(
                     modifier = Modifier
-                        .width(2.dp)
+                        .fillMaxWidth()
                         .height(20.dp)
-                        .background(Color(0xFF64748B))
-                )
-
-                // 3. Child Branch Nodes
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    val branchColors = listOf(
-                        Color(0xFF10B981) to Color(0xFF064E3B),
-                        Color(0xFFA855F7) to Color(0xFF3B0764),
-                        Color(0xFFF59E0B) to Color(0xFF451A03),
-                        Color(0xFF06B6D4) to Color(0xFF164E63)
-                    )
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val centerX = size.width / 2f
+                        drawLine(
+                            color = Color(0xFF38BDF8),
+                            start = Offset(centerX, 0f),
+                            end = Offset(centerX, size.height),
+                            strokeWidth = 3.dp.toPx()
+                        )
+                        drawCircle(
+                            color = Color(0xFF38BDF8),
+                            radius = 4.dp.toPx(),
+                            center = Offset(centerX, size.height)
+                        )
+                    }
+                }
 
+                // 3. Branches with Integrated Structural Spine Lines
+                Column(modifier = Modifier.fillMaxWidth()) {
                     mindmapData.branches.forEachIndexed { index, branch ->
                         val (accent, bg) = branchColors[index % branchColors.size]
+                        val isFirst = index == 0
+                        val isLast = index == mindmapData.branches.size - 1
 
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = bg.copy(alpha = 0.7f)),
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, accent.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                .height(IntrinsicSize.Min),
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(accent)
+                            // Left Spine & Branch Line Canvas
+                            Box(
+                                modifier = Modifier
+                                    .width(28.dp)
+                                    .fillMaxHeight()
+                            ) {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val spineX = 10.dp.toPx()
+                                    val branchY = 22.dp.toPx() // Centers with the card's title text
+                                    val endX = size.width
+                                    val stroke = 2.5.dp.toPx()
+
+                                    // Top connector segment
+                                    if (!isFirst) {
+                                        drawLine(
+                                            color = Color(0xFF38BDF8),
+                                            start = Offset(spineX, 0f),
+                                            end = Offset(spineX, branchY),
+                                            strokeWidth = stroke
+                                        )
+                                    }
+
+                                    // Bottom connector segment extending to next branch
+                                    if (!isLast) {
+                                        drawLine(
+                                            color = Color(0xFF38BDF8),
+                                            start = Offset(spineX, branchY),
+                                            end = Offset(spineX, size.height),
+                                            strokeWidth = stroke
+                                        )
+                                    }
+
+                                    // Horizontal arm extending directly into the card
+                                    drawLine(
+                                        color = accent,
+                                        start = Offset(spineX, branchY),
+                                        end = Offset(endX, branchY),
+                                        strokeWidth = stroke
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = branch.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = accent
+
+                                    // Spine node circle
+                                    drawCircle(
+                                        color = accent,
+                                        radius = 4.dp.toPx(),
+                                        center = Offset(spineX, branchY)
+                                    )
+
+                                    // Entry circle on card border
+                                    drawCircle(
+                                        color = accent,
+                                        radius = 3.dp.toPx(),
+                                        center = Offset(endX, branchY)
                                     )
                                 }
+                            }
 
-                                if (branch.subItems.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        branch.subItems.forEach { subItem ->
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = Color(0xFF0F172A).copy(alpha = 0.8f)
-                                            ) {
-                                                Text(
-                                                    text = subItem,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = Color(0xFFCBD5E1),
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                )
+                            // Branch Content Card
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = bg.copy(alpha = 0.65f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(bottom = if (isLast) 0.dp else 12.dp)
+                                    .border(1.dp, accent.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(accent)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = branch.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = accent
+                                        )
+                                    }
+
+                                    if (branch.subItems.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            branch.subItems.forEach { subItem ->
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = Color(0xFF0F172A).copy(alpha = 0.9f),
+                                                    border = androidx.compose.foundation.BorderStroke(
+                                                        0.5.dp,
+                                                        accent.copy(alpha = 0.35f)
+                                                    )
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "•",
+                                                            color = accent,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(
+                                                            text = subItem,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = Color(0xFFCBD5E1)
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -434,18 +552,24 @@ fun AiOutputIsland(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = accentColor
+                    color = accentColor,
+                    modifier = Modifier.weight(1f)
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     FilledTonalButton(
                         onClick = onSchedule,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(32.dp)
                     ) {
                         Icon(Icons.Default.EventAvailable, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Schedule", style = MaterialTheme.typography.labelSmall)
                     }
+
                     IconButton(
                         onClick = {
                             clipboardManager.setText(AnnotatedString(content))
@@ -455,11 +579,19 @@ fun AiOutputIsland(
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = accentColor, modifier = Modifier.size(16.dp))
                     }
+
                     IconButton(
                         onClick = onDelete,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f), CircleShape)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.85f), modifier = Modifier.size(18.dp))
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
             }

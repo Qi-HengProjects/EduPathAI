@@ -66,36 +66,18 @@ class GeminiService {
         }
 
         return@withContext try {
-            val model = GenerativeModel(modelName = "gemini-1.5-flash", apiKey = rawApiKey)
+            val model = GenerativeModel(
+                modelName = "gemini-3-flash-preview",
+                apiKey = rawApiKey,
+            )
             val response = model.generateContent(prompt)
             sanitizeText(response.text ?: "No response generated.")
         } catch (e: Exception) {
             Log.e("GeminiService", "Gemini API request failed", e)
-            "AI Processing Failed: ${e.message}"
+            "AI Processing Failed: ${e.message ?: "Unable to connect to Gemini service."}"
         }
     }
 
-    suspend fun sendChatMessage(history: List<ChatMessage>, userPrompt: String): String = withContext(Dispatchers.IO) {
-        val rawApiKey = BuildConfig.GEMINI_API_KEY
-        if (rawApiKey.isBlank()) return@withContext "❌ CONFIG ERROR: No API Key."
-
-        try {
-            val model = GenerativeModel(modelName = "gemini-3-flash-preview", apiKey = rawApiKey)
-            val chatHistory = history.map {
-                com.google.ai.client.generativeai.type.content(role = it.role) { text(it.content) }
-            }
-            val chat = model.startChat(history = chatHistory)
-            val response = chat.sendMessage(userPrompt)
-            sanitizeText(response.text ?: "⚠️ AI returned empty text.")
-        } catch (e: Exception) {
-            Log.e("GeminiService", "Chat failed", e)
-            "❌ CHAT ERROR: ${e.localizedMessage}"
-        }
-    }
-
-    /**
-     * Parses the sanitized AI mindmap text into structured node data for drawing.
-     */
     fun parseMindmapData(rawText: String, defaultTitle: String): MindmapData {
         var root = defaultTitle.ifBlank { "Main Topic" }
         val branches = mutableListOf<MindmapBranch>()
@@ -121,7 +103,6 @@ class GeminiService {
         }
 
         if (branches.isEmpty()) {
-            // Fallback parser if format was loosely structured
             val lines = rawText.lines().filter { it.isNotBlank() }
             root = lines.firstOrNull() ?: defaultTitle
             lines.drop(1).take(4).forEach { item ->
@@ -133,18 +114,15 @@ class GeminiService {
     }
 
     companion object {
-        /**
-         * Cleans out all Markdown hashtags, bold/italic asterisks, and backticks.
-         */
         fun sanitizeText(raw: String): String {
             return raw
                 .replace(Regex("```[a-zA-Z]*"), "")
                 .replace("```", "")
-                .replace(Regex("(?m)^#{1,6}\\s*"), "") // Strips #, ##, ###, ####
-                .replace(Regex("\\*{1,}"), "")         // Strips *, **, ***
-                .replace("`", "")                      // Strips inline backticks
-                .replace(Regex("(?m)^[\\-\\+]\\s+"), "• ") // Standardize bullets
-                .replace(Regex("\n{3,}"), "\n\n")      // Normalize line gaps
+                .replace(Regex("(?m)^#{1,6}\\s*"), "")
+                .replace(Regex("\\*+"), "")
+                .replace("`", "")
+                .replace(Regex("(?m)^[-+]\\s+"), "• ")
+                .replace(Regex("\n{3,}"), "\n\n")
                 .trim()
         }
     }

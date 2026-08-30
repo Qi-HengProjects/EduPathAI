@@ -48,8 +48,7 @@ class NotesViewModel(
     fun createFolder(name: String) {
         viewModelScope.launch {
             try {
-                val newFolder = SubjectFolder(subjectName = name)
-                repository.createFolder(newFolder)
+                repository.addFolder(name)
                 // Refresh list after adding
                 loadFolders()
             } catch (e: Exception) {

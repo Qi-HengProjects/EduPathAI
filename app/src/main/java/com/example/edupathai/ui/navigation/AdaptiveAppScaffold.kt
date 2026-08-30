@@ -76,7 +76,7 @@ fun AdaptiveAppScaffold(
             }
         }
     } else {
-        // PORTRAIT MODE: Bottom Navigation Bar (Hidden when keyboard opens to eliminate gap)
+        // PORTRAIT MODE: 4-Item Bottom Navigation Bar
         Scaffold(
             bottomBar = {
                 if (!isKeyboardOpen) {

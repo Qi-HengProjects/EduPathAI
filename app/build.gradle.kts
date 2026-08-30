@@ -86,6 +86,7 @@ dependencies {
 
     // 5. Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
