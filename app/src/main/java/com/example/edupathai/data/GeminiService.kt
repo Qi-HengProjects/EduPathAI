@@ -15,7 +15,7 @@ object GeminiService {
 
     private val model by lazy {
         GenerativeModel(
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.6-flash",
             apiKey = BuildConfig.GEMINI_API_KEY
         )
     }
@@ -32,20 +32,40 @@ object GeminiService {
             .trim()
     }
 
-    suspend fun simplifyNote(content: String): String = withContext(Dispatchers.IO) {
+    suspend fun sendChatMessage(userPrompt: String): String = withContext(Dispatchers.IO) {
         if (BuildConfig.GEMINI_API_KEY.isBlank()) {
-            return@withContext "API Key missing in local.properties."
+            return@withContext "API Key is missing. Please add GEMINI_API_KEY to your local.properties file."
         }
         try {
             val response = model.generateContent(
                 """
-                You are a concise study tutor.
-                Simplify and explain the following study notes into high-impact key takeaways.
+                You are EduPath AI, an encouraging and clear academic study assistant.
+                Answer the student's question directly, clearly, and concisely.
                 
+                RULES:
+                - Do NOT use markdown symbols like asterisks (** or *) or hashtags (#).
+                - Use clean bullet points (• ) when listing items.
+                - Keep explanations structured and easy to read.
+                
+                Student Question:
+                $userPrompt
+                """.trimIndent()
+            )
+            sanitizeText(response.text ?: "Sorry, I couldn't formulate a response. Please try again.")
+        } catch (e: Exception) {
+            "AI Error: ${e.localizedMessage ?: "Unable to connect to AI services."}"
+        }
+    }
+
+    suspend fun simplifyNote(content: String): String = withContext(Dispatchers.IO) {
+        if (BuildConfig.GEMINI_API_KEY.isBlank()) return@withContext "API Key missing."
+        try {
+            val response = model.generateContent(
+                """
+                Simplify and explain the following study notes into high-impact key takeaways.
                 RULES:
                 - Do NOT use markdown asterisks (**) or hashtags (#).
                 - Use clear bullet points (• ) for key points.
-                - Keep it simple, clear, and direct.
                 
                 Content:
                 $content
@@ -53,7 +73,7 @@ object GeminiService {
             )
             sanitizeText(response.text ?: "Could not simplify content.")
         } catch (e: Exception) {
-            "Error generating summary: ${e.localizedMessage ?: "Unknown error"}"
+            "Error: ${e.localizedMessage ?: "Unknown error"}"
         }
     }
 
@@ -61,10 +81,9 @@ object GeminiService {
         if (BuildConfig.GEMINI_API_KEY.isBlank()) return@withContext emptyList()
         try {
             val prompt = """
-                Generate 4-6 study flashcards from the text below.
+                Generate 4 study flashcards from the text below.
                 Return ONLY a valid JSON array of objects with keys "question" and "answer".
-                Do not include markdown backticks or extra text.
-                
+                Do not include markdown tags.
                 Text:
                 $content
             """.trimIndent()
@@ -73,18 +92,13 @@ object GeminiService {
             val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "[]"
             jsonParser.decodeFromString<List<Flashcard>>(raw)
         } catch (e: Exception) {
-            listOf(
-                Flashcard(
-                    question = "Key Concept",
-                    answer = content.take(120) + "..."
-                )
-            )
+            listOf(Flashcard(question = "Core Concept", answer = content.take(120)))
         }
     }
 
     suspend fun generateMindmap(content: String): MindmapData = withContext(Dispatchers.IO) {
         if (BuildConfig.GEMINI_API_KEY.isBlank()) {
-            return@withContext MindmapData(rootTitle = "Study Topic", branches = emptyList())
+            return@withContext MindmapData(rootTitle = "Study Subject", branches = emptyList())
         }
         try {
             val prompt = """
@@ -99,9 +113,7 @@ object GeminiService {
                     }
                   ]
                 }
-                Do not wrap in markdown tags. Return raw JSON.
-                
-                Notes:
+                Text:
                 $content
             """.trimIndent()
 
@@ -110,10 +122,8 @@ object GeminiService {
             jsonParser.decodeFromString<MindmapData>(raw)
         } catch (e: Exception) {
             MindmapData(
-                rootTitle = "Study Summary",
-                branches = listOf(
-                    MindmapBranch(title = "Core Concept", subItems = listOf(content.take(80)))
-                )
+                rootTitle = "Study Notes",
+                branches = listOf(MindmapBranch(title = "Overview", subItems = listOf(content.take(80))))
             )
         }
     }
@@ -129,11 +139,9 @@ object GeminiService {
                     "question": "Question text here?",
                     "options": ["Option A", "Option B", "Option C", "Option D"],
                     "correctAnswer": "Option A",
-                    "explanation": "Explanation why Option A is correct."
+                    "explanation": "Why this option is correct."
                   }
                 ]
-                Do not add markdown codeblocks. Return pure JSON.
-                
                 Text:
                 $content
             """.trimIndent()

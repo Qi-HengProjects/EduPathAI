@@ -1,6 +1,6 @@
 package com.example.edupathai.data
 
-import android.util.Log
+import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -8,99 +8,97 @@ import kotlinx.coroutines.withContext
 class ChatRepository {
     private val client = SupabaseProvider.client
 
-    suspend fun createSession(title: String = "New Conversation"): ChatSession? = withContext(Dispatchers.IO) {
+    suspend fun createSession(title: String = "New Conversation", userId: String? = null): ChatSession? = withContext(Dispatchers.IO) {
+        val currentUserId = userId ?: client.auth.currentUserOrNull()?.id ?: return@withContext null
+        val session = ChatSession(
+            userId = currentUserId,
+            title = title
+        )
         try {
-            client.from("chat_sessions")
-                .insert(ChatSession(title = title)) {
-                    select()
-                }
-                .decodeSingle<ChatSession>()
+            client.from("chat_sessions").insert(session) {
+                select()
+            }.decodeSingle<ChatSession>()
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error creating chat session", e)
             null
         }
     }
 
-    suspend fun fetchMessages(sessionId: String): List<ChatMessage> = withContext(Dispatchers.IO) {
+    suspend fun getSessions(userId: String? = null): List<ChatSession> = withContext(Dispatchers.IO) {
+        val currentUserId = userId ?: client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
         try {
-            client.from("chat_messages")
-                .select {
-                    filter { eq("session_id", sessionId) }
-                }
-                .decodeList<ChatMessage>()
+            client.from("chat_sessions").select {
+                filter { eq("user_id", currentUserId) }
+            }.decodeList<ChatSession>()
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error fetching messages", e)
             emptyList()
         }
     }
 
-    suspend fun getSessions(query: String = ""): List<ChatSession> = withContext(Dispatchers.IO) {
+    suspend fun saveMessage(message: ChatMessage): ChatMessage? = withContext(Dispatchers.IO) {
+        val currentUserId = message.userId ?: client.auth.currentUserOrNull()?.id ?: return@withContext null
+        val msgWithUser = message.copy(userId = currentUserId)
         try {
-            client.from("chat_sessions")
-                .select {
-                    if (query.isNotBlank()) {
-                        filter { ilike("title", "%$query%") }
-                    }
-                    order("created_at", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                }
-                .decodeList<ChatSession>()
+            client.from("chat_messages").insert(msgWithUser) {
+                select()
+            }.decodeSingle<ChatMessage>()
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error getting sessions", e)
+            null
+        }
+    }
+
+    suspend fun getMessages(sessionId: String): List<ChatMessage> = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
+        try {
+            client.from("chat_messages").select {
+                filter {
+                    eq("session_id", sessionId)
+                    eq("user_id", currentUserId)
+                }
+            }.decodeList<ChatMessage>()
+        } catch (e: Exception) {
             emptyList()
         }
     }
 
     suspend fun renameSession(sessionId: String, newTitle: String) = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
         try {
             client.from("chat_sessions").update({
                 set("title", newTitle)
             }) {
-                filter { eq("id", sessionId) }
+                filter {
+                    eq("id", sessionId)
+                    eq("user_id", currentUserId)
+                }
             }
-        } catch (e: Exception) {
-            Log.e("ChatRepository", "Error renaming session", e)
-        }
+        } catch (_: Exception) {}
     }
 
     suspend fun toggleSessionPin(sessionId: String, isPinned: Boolean) = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
         try {
             client.from("chat_sessions").update({
                 set("is_pinned", isPinned)
             }) {
-                filter { eq("id", sessionId) }
+                filter {
+                    eq("id", sessionId)
+                    eq("user_id", currentUserId)
+                }
             }
-        } catch (e: Exception) {
-            Log.e("ChatRepository", "Error toggling pin", e)
-        }
+        } catch (_: Exception) {}
     }
+
+    suspend fun pinSession(sessionId: String, isPinned: Boolean) = toggleSessionPin(sessionId, isPinned)
 
     suspend fun deleteSession(sessionId: String) = withContext(Dispatchers.IO) {
+        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext
         try {
             client.from("chat_sessions").delete {
-                filter { eq("id", sessionId) }
+                filter {
+                    eq("id", sessionId)
+                    eq("user_id", currentUserId)
+                }
             }
-        } catch (e: Exception) {
-            Log.e("ChatRepository", "Error deleting session", e)
-        }
-    }
-
-    suspend fun touchSession(sessionId: String) = withContext(Dispatchers.IO) {
-        try {
-            client.from("chat_sessions").update({
-                set("updated_at", java.time.OffsetDateTime.now().toString())
-            }) {
-                filter { eq("id", sessionId) }
-            }
-        } catch (e: Exception) {
-            Log.e("ChatRepository", "Error touching session", e)
-        }
-    }
-
-    suspend fun saveMessage(message: ChatMessage) = withContext(Dispatchers.IO) {
-        try {
-            client.from("chat_messages").insert(message)
-        } catch (e: Exception) {
-            Log.e("ChatRepository", "Error saving message to Supabase", e)
-        }
+        } catch (_: Exception) {}
     }
 }

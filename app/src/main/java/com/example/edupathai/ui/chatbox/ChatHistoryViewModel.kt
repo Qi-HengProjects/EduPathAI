@@ -11,11 +11,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ChatHistoryUiState(
-    val isLoading: Boolean = false,
     val sessions: List<ChatSession> = emptyList(),
-    val searchQuery: String = "",
+    val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val snackbarMessage: String? = null
+    val searchQuery: String = ""
 )
 
 class ChatHistoryViewModel(
@@ -29,64 +28,45 @@ class ChatHistoryViewModel(
         loadSessions()
     }
 
-    /** Read: fetches sessions, filtered by the current search query (title search). */
-    fun loadSessions() {
+    fun loadSessions(userId: String? = null) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
-                val fetchedSessions = repository.getSessions(_uiState.value.searchQuery)
-                _uiState.update { it.copy(isLoading = false, sessions = fetchedSessions, errorMessage = null) }
+                val sessions = repository.getSessions(userId)
+                _uiState.update { it.copy(sessions = sessions, isLoading = false) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
             }
         }
     }
 
-    fun onSearchQueryChange(query: String) {
-        _uiState.update { it.copy(searchQuery = query) }
-        loadSessions()
-    }
-
-    /** Update: rename a session/thread. */
-    fun renameSession(id: String, newTitle: String) {
-        if (newTitle.isBlank()) return
+    fun renameSession(sessionId: String, newTitle: String) {
         viewModelScope.launch {
-            try {
-                repository.renameSession(id, newTitle.trim())
-                loadSessions()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
-            }
+            repository.renameSession(sessionId, newTitle)
+            loadSessions()
         }
     }
 
-    /** Update: star / pin a session so it stays pinned to the top. */
+    fun toggleSessionPin(sessionId: String, isPinned: Boolean) {
+        viewModelScope.launch {
+            repository.toggleSessionPin(sessionId, isPinned)
+            loadSessions()
+        }
+    }
+
     fun togglePin(session: ChatSession) {
-        val id = session.id ?: return
+        val sId = session.id ?: return
+        toggleSessionPin(sId, !session.isPinned)
+    }
+
+    fun deleteSession(sessionId: String) {
         viewModelScope.launch {
-            try {
-                repository.toggleSessionPin(id, !session.isPinned)
-                loadSessions()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
-            }
+            repository.deleteSession(sessionId)
+            loadSessions()
         }
     }
 
-    /** Delete: remove an individual chat thread entirely. */
-    fun deleteSession(id: String) {
-        viewModelScope.launch {
-            try {
-                repository.deleteSession(id)
-                loadSessions()
-                _uiState.update { it.copy(snackbarMessage = "Chat deleted") }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
-            }
-        }
-    }
-
-    fun clearSnackbar() {
-        _uiState.update { it.copy(snackbarMessage = null) }
+    fun updateSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
     }
 }

@@ -2,78 +2,39 @@ package com.example.edupathai.ui.chatbox
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.edupathai.BuildConfig
 import com.example.edupathai.data.ChatMessage
 import com.example.edupathai.data.ChatRepository
 import com.example.edupathai.data.GeminiService
 import com.example.edupathai.data.NoteBookEntry
 import com.example.edupathai.data.NoteFolder
 import com.example.edupathai.data.NoteRepository
-import com.google.ai.client.generativeai.GenerativeModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val currentSessionId: String? = null,
+    val currentSessionTitle: String = "New Conversation",
     val isLoading: Boolean = false,
-    val errorMessage: String? = null,
     val availableFolders: List<NoteFolder> = emptyList(),
     val isSavingNote: Boolean = false,
     val actionFeedbackMessage: String? = null
 )
 
 class ChatViewModel(
-    private val initialSessionId: String? = null,
-    private val initialSessionTitle: String? = null,
     private val repository: ChatRepository = ChatRepository(),
     private val noteRepository: NoteRepository = NoteRepository()
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(
-        ChatUiState(
-            currentSessionId = initialSessionId
-        )
-    )
+    private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
-    private val generativeModel by lazy {
-        GenerativeModel(
-            modelName = "gemini-1.5-flash",
-            apiKey = BuildConfig.GEMINI_API_KEY
-        )
-    }
-
     init {
-        if (initialSessionId != null) {
-            loadMessages(initialSessionId)
-        } else {
-            startNewSession()
-        }
+        startNewSession()
         loadAvailableFolders()
-    }
-
-    fun loadMessages(sessionId: String) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            try {
-                val messages = repository.fetchMessages(sessionId)
-                _uiState.update {
-                    it.copy(
-                        messages = messages,
-                        currentSessionId = sessionId,
-                        isLoading = false
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
-            }
-        }
     }
 
     fun startNewSession() {
@@ -83,8 +44,27 @@ class ChatViewModel(
                 it.copy(
                     messages = emptyList(),
                     currentSessionId = session?.id,
-                    isLoading = false,
-                    errorMessage = null
+                    currentSessionTitle = "New Conversation",
+                    isLoading = false
+                )
+            }
+        }
+    }
+
+    fun loadSession(sessionId: String, title: String) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    currentSessionId = sessionId,
+                    currentSessionTitle = title
+                )
+            }
+            val msgs = repository.getMessages(sessionId)
+            _uiState.update {
+                it.copy(
+                    messages = msgs,
+                    isLoading = false
                 )
             }
         }
@@ -101,52 +81,53 @@ class ChatViewModel(
         val trimmed = userText.trim()
         if (trimmed.isBlank() || _uiState.value.isLoading) return
 
-        val sessionId = _uiState.value.currentSessionId
-        val userMessage = ChatMessage(sessionId = sessionId, sender = "user", text = trimmed)
+        val initialUserMsg = ChatMessage(
+            sessionId = _uiState.value.currentSessionId,
+            sender = "user",
+            text = trimmed
+        )
 
         _uiState.update {
             it.copy(
-                messages = it.messages + userMessage,
-                isLoading = true,
-                errorMessage = null
+                messages = it.messages + initialUserMsg,
+                isLoading = true
             )
         }
 
         viewModelScope.launch {
-            repository.saveMessage(userMessage)
-
-            val botResponseText = try {
-                withContext(Dispatchers.IO) {
-                    if (BuildConfig.GEMINI_API_KEY.isBlank()) {
-                        "API Key missing. Please check your local.properties configuration."
-                    } else {
-                        val response = generativeModel.generateContent(
-                            """
-                            You are an assistive study tutor.
-                            Answer the student's question clearly, directly, and concisely.
-                            
-                            STRICT RULES:
-                            - Do NOT use markdown symbols. Never use asterisks (** or *), hashtags (#), or backticks.
-                            - Use standard clean bullet points (• ) if listing items.
-                            
-                            Student: $trimmed
-                            """.trimIndent()
-                        )
-                        GeminiService.sanitizeText(response.text ?: "Sorry, I couldn't generate a response.")
-                    }
+            var activeSessionId = _uiState.value.currentSessionId
+            if (activeSessionId == null) {
+                val newSession = repository.createSession(title = trimmed.take(30))
+                activeSessionId = newSession?.id
+                _uiState.update {
+                    it.copy(
+                        currentSessionId = activeSessionId,
+                        currentSessionTitle = trimmed.take(30)
+                    )
                 }
-            } catch (e: Exception) {
-                "Error connecting to AI: ${e.localizedMessage ?: "Unknown error"}"
             }
 
-            val botMessage = ChatMessage(sessionId = sessionId, sender = "model", text = botResponseText)
-            repository.saveMessage(botMessage)
+            if (activeSessionId != null) {
+                repository.saveMessage(initialUserMsg.copy(sessionId = activeSessionId))
+            }
+
+            val aiResponseText = GeminiService.sendChatMessage(trimmed)
+
+            val botMessage = ChatMessage(
+                sessionId = activeSessionId,
+                sender = "model",
+                text = aiResponseText
+            )
 
             _uiState.update {
                 it.copy(
                     messages = it.messages + botMessage,
                     isLoading = false
                 )
+            }
+
+            if (activeSessionId != null) {
+                repository.saveMessage(botMessage)
             }
         }
     }
@@ -179,7 +160,7 @@ class ChatViewModel(
                 _uiState.update {
                     it.copy(
                         isSavingNote = false,
-                        actionFeedbackMessage = "Failed to save note: ${e.message}"
+                        actionFeedbackMessage = "Failed to save: ${e.message}"
                     )
                 }
             }

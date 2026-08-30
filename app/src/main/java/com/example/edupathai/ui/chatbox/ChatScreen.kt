@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,13 +29,21 @@ import com.example.edupathai.data.NoteFolder
 fun ChatScreen(
     viewModel: ChatViewModel,
     onNavigateToHistory: () -> Unit = {},
-    onNavigateBack: () -> Unit = {}
+    onNavigateBack: (() -> Unit)? = null,
+    initialSessionId: String? = null,
+    initialSessionTitle: String? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
     var inputText by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(initialSessionId) {
+        if (!initialSessionId.isNullOrBlank() && initialSessionId != uiState.currentSessionId) {
+            viewModel.loadSession(initialSessionId, initialSessionTitle ?: "Conversation")
+        }
+    }
 
     // Save to Notes Dialog State
     var showSaveNoteDialog by rememberSaveable { mutableStateOf(false) }
@@ -62,9 +69,10 @@ fun ChatScreen(
                 title = {
                     Column {
                         Text(
-                            text = "AI Study Assistant",
+                            text = uiState.currentSessionTitle.ifBlank { "AI Study Assistant" },
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1
                         )
                         Text(
                             text = "Ask questions, generate study notes & plans",
@@ -74,22 +82,25 @@ fun ChatScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    if (onNavigateBack != null) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onNavigateToHistory) {
-                        Icon(
-                            imageVector = Icons.Default.History,
-                            contentDescription = "Chat History"
-                        )
-                    }
                     IconButton(onClick = { viewModel.startNewSession() }) {
                         Icon(
                             imageVector = Icons.Default.AddComment,
                             contentDescription = "New Session",
                             tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(onClick = onNavigateToHistory) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = "History",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -379,7 +390,7 @@ fun SaveAiToNotesDialog(
                             onDismissRequest = { dropdownExpanded = false }
                         ) {
                             availableFolders.forEach { folder ->
-                                val fId = folder.id ?: ""
+                                val fId = folder.id
                                 DropdownMenuItem(
                                     text = { Text(folder.name) },
                                     onClick = {
