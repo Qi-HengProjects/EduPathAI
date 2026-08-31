@@ -32,6 +32,28 @@ object GeminiService {
             .trim()
     }
 
+    suspend fun generateSessionTitle(prompt: String): String = withContext(Dispatchers.IO) {
+        if (BuildConfig.GEMINI_API_KEY.isBlank()) {
+            return@withContext prompt.take(26).trim()
+        }
+        try {
+            val response = model.generateContent(
+                """
+                Generate a short 2 to 4 word title summarising this study topic:
+                "$prompt"
+                
+                RULES:
+                - Return ONLY the title text.
+                - No quotes, no markdown, no punctuation.
+                """.trimIndent()
+            )
+            val generated = sanitizeText(response.text ?: "")
+            if (generated.isNotBlank()) generated.take(30) else prompt.take(26).trim()
+        } catch (_: Exception) {
+            prompt.take(26).trim()
+        }
+    }
+
     suspend fun sendChatMessage(userPrompt: String): String = withContext(Dispatchers.IO) {
         if (BuildConfig.GEMINI_API_KEY.isBlank()) {
             return@withContext "API Key is missing. Please add GEMINI_API_KEY to your local.properties file."

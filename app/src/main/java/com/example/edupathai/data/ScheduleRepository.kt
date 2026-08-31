@@ -2,6 +2,7 @@ package com.example.edupathai.data
 
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -13,6 +14,7 @@ class ScheduleRepository {
         try {
             client.from("schedule_tasks").select {
                 filter { eq("user_id", currentUserId) }
+                order(column = "start_time", order = Order.ASCENDING)
             }.decodeList<ScheduleTask>()
         } catch (e: Exception) {
             emptyList()

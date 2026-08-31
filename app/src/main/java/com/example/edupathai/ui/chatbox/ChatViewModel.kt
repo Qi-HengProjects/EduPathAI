@@ -8,6 +8,8 @@ import com.example.edupathai.data.GeminiService
 import com.example.edupathai.data.NoteBookEntry
 import com.example.edupathai.data.NoteFolder
 import com.example.edupathai.data.NoteRepository
+import com.example.edupathai.data.ScheduleRepository
+import com.example.edupathai.data.ScheduleTask
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,16 +19,19 @@ import kotlinx.coroutines.launch
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val currentSessionId: String? = null,
-    val currentSessionTitle: String = "New Conversation",
+    val currentSessionTitle: String = "AI Study Assistant",
+    val inputText: String = "",
     val isLoading: Boolean = false,
     val availableFolders: List<NoteFolder> = emptyList(),
     val isSavingNote: Boolean = false,
+    val isSchedulingTask: Boolean = false,
     val actionFeedbackMessage: String? = null
 )
 
 class ChatViewModel(
     private val repository: ChatRepository = ChatRepository(),
-    private val noteRepository: NoteRepository = NoteRepository()
+    private val noteRepository: NoteRepository = NoteRepository(),
+    private val scheduleRepository: ScheduleRepository = ScheduleRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -37,17 +42,19 @@ class ChatViewModel(
         loadAvailableFolders()
     }
 
+    fun updateInputText(text: String) {
+        _uiState.update { it.copy(inputText = text) }
+    }
+
     fun startNewSession() {
-        viewModelScope.launch {
-            val session = repository.createSession()
-            _uiState.update {
-                it.copy(
-                    messages = emptyList(),
-                    currentSessionId = session?.id,
-                    currentSessionTitle = "New Conversation",
-                    isLoading = false
-                )
-            }
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                currentSessionId = null,
+                currentSessionTitle = "AI Study Assistant",
+                inputText = "",
+                isLoading = false
+            )
         }
     }
 
@@ -77,9 +84,11 @@ class ChatViewModel(
         }
     }
 
-    fun sendMessage(userText: String) {
-        val trimmed = userText.trim()
+    fun sendMessage() {
+        val trimmed = _uiState.value.inputText.trim()
         if (trimmed.isBlank() || _uiState.value.isLoading) return
+
+        val isFirstMessageInSession = _uiState.value.currentSessionId == null
 
         val initialUserMsg = ChatMessage(
             sessionId = _uiState.value.currentSessionId,
@@ -90,19 +99,23 @@ class ChatViewModel(
         _uiState.update {
             it.copy(
                 messages = it.messages + initialUserMsg,
+                inputText = "",
                 isLoading = true
             )
         }
 
         viewModelScope.launch {
             var activeSessionId = _uiState.value.currentSessionId
-            if (activeSessionId == null) {
-                val newSession = repository.createSession(title = trimmed.take(30))
+
+            // Automatically generate a topic-based title on the first message
+            if (isFirstMessageInSession || activeSessionId == null) {
+                val autoTitle = GeminiService.generateSessionTitle(trimmed)
+                val newSession = repository.createSession(title = autoTitle)
                 activeSessionId = newSession?.id
                 _uiState.update {
                     it.copy(
                         currentSessionId = activeSessionId,
-                        currentSessionTitle = trimmed.take(30)
+                        currentSessionTitle = autoTitle
                     )
                 }
             }
@@ -210,6 +223,48 @@ class ChatViewModel(
                     it.copy(
                         isSavingNote = false,
                         actionFeedbackMessage = "Error: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun scheduleTimelineTask(
+        title: String,
+        startTime: String,
+        endTime: String,
+        energyLevel: String,
+        taskType: String,
+        colorHex: String,
+        onSuccess: () -> Unit
+    ) {
+        if (title.isBlank() || startTime.isBlank() || endTime.isBlank()) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSchedulingTask = true) }
+            try {
+                val newTask = ScheduleTask(
+                    title = title.trim(),
+                    startTime = startTime.trim(),
+                    endTime = endTime.trim(),
+                    energyLevel = energyLevel,
+                    taskType = taskType,
+                    colorHex = colorHex,
+                    isCompleted = false
+                )
+                scheduleRepository.createTask(newTask)
+                _uiState.update {
+                    it.copy(
+                        isSchedulingTask = false,
+                        actionFeedbackMessage = "Scheduled into Daily Timeline!"
+                    )
+                }
+                onSuccess()
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isSchedulingTask = false,
+                        actionFeedbackMessage = "Failed to schedule: ${e.message}"
                     )
                 }
             }

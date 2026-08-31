@@ -9,15 +9,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 
 data class ScheduleUiState(
     val tasks: List<ScheduleTask> = emptyList(),
-    val selectedDate: LocalDate = LocalDate.now(),
     val isLoading: Boolean = false,
-    val activeTabIndex: Int = 0, // 0 = Daily Timeline, 1 = Monthly Calendar
     val errorMessage: String? = null,
-    val snackbarMessage: String? = null
+    val notificationMessage: String? = null
 )
 
 class ScheduleViewModel(
@@ -31,69 +28,59 @@ class ScheduleViewModel(
         loadTasks()
     }
 
-    fun setTab(index: Int) {
-        _uiState.update { it.copy(activeTabIndex = index) }
-    }
-
-    fun setSelectedDate(date: LocalDate) {
-        _uiState.update { it.copy(selectedDate = date) }
-    }
-
     fun loadTasks() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 val fetchedTasks = repository.getTasks()
-                _uiState.update { it.copy(tasks = fetchedTasks, isLoading = false) }
+                _uiState.update {
+                    it.copy(
+                        tasks = fetchedTasks,
+                        isLoading = false
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Failed to load schedule: ${e.message}"
+                    )
+                }
             }
         }
     }
 
     fun toggleTaskCompletion(task: ScheduleTask) {
-        viewModelScope.launch {
-            val updated = task.copy(isCompleted = !task.isCompleted)
-            try {
-                repository.updateTask(updated)
-                _uiState.update { state ->
-                    state.copy(tasks = state.tasks.map { if (it.id == task.id) updated else it })
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
-            }
-        }
-    }
-
-    fun deleteTask(task: ScheduleTask) {
-        val taskId = task.id ?: return
+        val updatedTask = task.copy(isCompleted = !task.isCompleted)
         viewModelScope.launch {
             try {
-                repository.deleteTask(taskId)
-                _uiState.update { state ->
-                    state.copy(
-                        tasks = state.tasks.filter { it.id != taskId },
-                        snackbarMessage = "Task deleted"
+                // Optimistic UI update
+                _uiState.update { current ->
+                    current.copy(
+                        tasks = current.tasks.map { if (it.id == task.id) updatedTask else it }
                     )
                 }
+                repository.updateTask(updatedTask)
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                loadTasks()
             }
         }
     }
 
-    fun addTask(task: ScheduleTask) {
+    fun deleteTask(taskId: String) {
         viewModelScope.launch {
             try {
-                repository.addTask(task)
-                loadTasks()
+                _uiState.update { current ->
+                    current.copy(tasks = current.tasks.filterNot { it.id == taskId })
+                }
+                repository.deleteTask(taskId)
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                loadTasks()
             }
         }
     }
 
-    fun clearSnackbar() {
-        _uiState.update { it.copy(snackbarMessage = null) }
+    fun clearNotification() {
+        _uiState.update { it.copy(notificationMessage = null, errorMessage = null) }
     }
 }
