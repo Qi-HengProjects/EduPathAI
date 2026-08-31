@@ -1,24 +1,34 @@
 package com.example.edupathai.ui
 
-import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.edupathai.data.ProfileModel
 import com.example.edupathai.data.SupabaseProvider
-import com.example.edupathai.data.UserProfile
+import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,153 +37,318 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLoggedOut: () -> Unit
 ) {
+    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
 
-    var username by remember { mutableStateOf("") }
-    var bio by remember { mutableStateOf("") }
-    var currentEmail by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(true) }
+    var profile by remember { mutableStateOf<ProfileModel?>(null) }
+    var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
+    var showLearningStyleDialog by rememberSaveable { mutableStateOf(false) }
+    var editUsername by rememberSaveable { mutableStateOf("") }
+    var editBio by rememberSaveable { mutableStateOf("") }
+    var selectedLearningStyle by rememberSaveable { mutableStateOf("Visual") }
 
-    LaunchedEffect(userId) {
-        try {
-            val p = SupabaseProvider.db.from("profiles")
-                .select { filter { eq("id", userId) } }
-                .decodeSingle<UserProfile>()
-            username = p.username ?: ""
-            bio = p.bio ?: ""
-            currentEmail = p.email ?: ""
-        } catch (_: Exception) {
-            currentEmail = SupabaseProvider.auth.currentUserOrNull()?.email ?: ""
-        } finally {
-            isLoading = false
+    val learningStyles = listOf("Visual", "Auditory", "Reading/Writing", "Kinesthetic")
+
+    fun loadProfile() {
+        coroutineScope.launch {
+            val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
+            val fetched = withContext(Dispatchers.IO) {
+                try {
+                    SupabaseProvider.client.from("profiles").select {
+                        filter { eq("id", currentUserId) }
+                    }.decodeSingleOrNull<ProfileModel>()
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            val user = fetched ?: ProfileModel(
+                id = currentUserId,
+                username = SupabaseProvider.client.auth.currentUserOrNull()?.email?.substringBefore("@") ?: "Student",
+                email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: "student@university.edu",
+                learningStyle = "Visual"
+            )
+            profile = user
+            editUsername = user.username
+            editBio = user.bio ?: ""
+            selectedLearningStyle = user.learningStyle
         }
     }
 
+    LaunchedEffect(userId) {
+        loadProfile()
+    }
+
     Scaffold(
+        containerColor = Color(0xFF0B0F19),
         topBar = {
             TopAppBar(
-                title = { Text("Settings & Profile", fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0B0F19)),
+                title = { Text("Settings & Preferences", fontWeight = FontWeight.Bold, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 }
             )
         }
-    ) { padding ->
-        if (isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
+        ) {
+            // Profile Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(18.dp))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF3B82F6).copy(alpha = 0.2f))
+                                .border(1.dp, Color(0xFF3B82F6), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF38BDF8))
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = profile?.username ?: "Student", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(text = profile?.email ?: "", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
+                        }
+
+                        IconButton(onClick = { showEditProfileDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Profile", tint = Color(0xFF38BDF8))
+                        }
+                    }
+                }
             }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Name Input
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Username") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
 
-                // Bio Input
-                OutlinedTextField(
-                    value = bio,
-                    onValueChange = { bio = it },
-                    label = { Text("Edit Bio") },
-                    modifier = Modifier.fillMaxWidth()
+            // Learning Style Setting Item
+            item {
+                SettingsActionCard(
+                    icon = Icons.Default.Psychology,
+                    title = "Learning Style",
+                    value = profile?.learningStyle ?: "Visual",
+                    onClick = { showLearningStyleDialog = true }
                 )
+            }
 
-                // Save Profile Changes
-                Button(
-                    onClick = {
-                        scope.launch {
-                            try {
-                                val emailToSave = if (currentEmail.isNotBlank()) {
-                                    currentEmail
-                                } else {
-                                    SupabaseProvider.auth.currentUserOrNull()?.email ?: ""
+            // About App Card
+            item {
+                SettingsActionCard(
+                    icon = Icons.Default.Info,
+                    title = "About EduPath AI",
+                    value = "Version 1.0.0",
+                    onClick = { Toast.makeText(context, "EduPath AI • Powered by Gemini AI", Toast.LENGTH_SHORT).show() }
+                )
+            }
+
+            // Sign Out Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                        .clickable { onLoggedOut() }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color(0xFFEF4444))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Sign Out", fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                    }
+                }
+            }
+        }
+
+        // Edit Profile Dialog
+        if (showEditProfileDialog) {
+            AlertDialog(
+                onDismissRequest = { showEditProfileDialog = false },
+                containerColor = Color(0xFF131C2E),
+                title = { Text("Edit Student Profile", fontWeight = FontWeight.Bold, color = Color.White) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = editUsername,
+                            onValueChange = { editUsername = it },
+                            label = { Text("Username") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editBio,
+                            onValueChange = { editBio = it },
+                            label = { Text("Bio / Academic Focus") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                try {
+                                    val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
+                                    val updated = ProfileModel(
+                                        id = currentUserId,
+                                        username = editUsername.trim(),
+                                        email = profile?.email ?: "",
+                                        bio = editBio.trim(),
+                                        learningStyle = profile?.learningStyle ?: "Visual"
+                                    )
+                                    withContext(Dispatchers.IO) {
+                                        SupabaseProvider.client.from("profiles").upsert(updated)
+                                    }
+                                    profile = updated
+                                    showEditProfileDialog = false
+                                    Toast.makeText(context, "Profile updated!", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
-                                val updatedProfile = UserProfile(
-                                    id = userId,
-                                    email = emailToSave,
-                                    username = username,
-                                    bio = bio
-                                )
-                                SupabaseProvider.db.from("profiles").upsert(updatedProfile)
-                                Toast.makeText(context, "Profile saved successfully!", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Update failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                    ) {
+                        Text("Save", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditProfileDialog = false }) {
+                        Text("Cancel", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        // Learning Style Selection Dialog
+        if (showLearningStyleDialog) {
+            AlertDialog(
+                onDismissRequest = { showLearningStyleDialog = false },
+                containerColor = Color(0xFF131C2E),
+                title = { Text("Select Learning Style", fontWeight = FontWeight.Bold, color = Color.White) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        learningStyles.forEach { style ->
+                            val isSelected = selectedLearningStyle == style
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) Color(0xFF3B82F6).copy(alpha = 0.2f) else Color(0xFF0F172A),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF3B82F6) else Color(0xFF1E293B)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedLearningStyle = style }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(text = style, style = MaterialTheme.typography.bodyMedium, color = Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                    }
+                                }
                             }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Save Changes")
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                // Switch Account (Clears saved Remember Me inputs & signs out)
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            prefs.edit().clear().apply()
-                            SupabaseProvider.auth.signOut()
-                            Toast.makeText(context, "Ready to switch account", Toast.LENGTH_SHORT).show()
-                            onLoggedOut()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Switch Account")
-                }
-
-                // Sign Out (Keeps Remember Me inputs for fast login next time)
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            SupabaseProvider.auth.signOut()
-                            Toast.makeText(context, "Signed out successfully", Toast.LENGTH_SHORT).show()
-                            onLoggedOut()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Sign Out")
-                }
-
-                // Delete Account Record
-                Button(
-                    onClick = {
-                        scope.launch {
-                            try {
-                                SupabaseProvider.db.from("profiles").delete {
-                                    filter { eq("id", userId) }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                try {
+                                    val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
+                                    val updated = profile?.copy(learningStyle = selectedLearningStyle) ?: ProfileModel(
+                                        id = currentUserId,
+                                        username = profile?.username ?: "Student",
+                                        email = profile?.email ?: "",
+                                        learningStyle = selectedLearningStyle
+                                    )
+                                    withContext(Dispatchers.IO) {
+                                        SupabaseProvider.client.from("profiles").upsert(updated)
+                                    }
+                                    profile = updated
+                                    showLearningStyleDialog = false
+                                    Toast.makeText(context, "Learning style updated!", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
-                                prefs.edit().clear().apply()
-                                SupabaseProvider.auth.signOut()
-                                Toast.makeText(context, "Account data deleted", Toast.LENGTH_SHORT).show()
-                                onLoggedOut()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Delete failed: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Delete Account Profile")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                    ) {
+                        Text("Apply", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLearningStyleDialog = false }) {
+                        Text("Cancel", color = Color(0xFF94A3B8))
+                    }
                 }
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsActionCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    value: String,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = value, style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
             }
         }
     }

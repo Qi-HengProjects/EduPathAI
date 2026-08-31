@@ -25,20 +25,39 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
 
         // 2. Fetch keys from local.properties and inject them into BuildConfig
         val supabaseUrl = localProperties.getProperty("SUPABASE_URL") ?: ""
-        val supabaseKey = localProperties.getProperty("SUPABASE_ANON_KEY") ?: ""
-        val geminiKey = localProperties.getProperty("GEMINI_API_KEY") ?: ""
+        val supabaseKey = localProperties.getProperty("SUPABASE_KEY")
+            ?: localProperties.getProperty("SUPABASE_ANON_KEY")
+            ?: ""
 
+        val geminiApiKeys = localProperties.getProperty("GEMINI_API_KEYS")
+            ?: localProperties.getProperty("GEMINI_API_KEY")
+            ?: ""
+
+        val fallbackSingleGeminiKey = localProperties.getProperty("GEMINI_API_KEY")
+            ?: geminiApiKeys.split(",").firstOrNull()?.trim()
+            ?: ""
+
+        // Injected constants for Supabase & Multi-Key Gemini
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"$supabaseKey\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
+        buildConfigField("String", "GEMINI_API_KEYS", "\"$geminiApiKeys\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"$fallbackSingleGeminiKey\"")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
@@ -51,9 +70,18 @@ android {
         compose = true
         buildConfig = true
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/io.netty.versions.properties"
+        }
+    }
 }
 
 dependencies {
+    // --- Compose & AndroidX Core ---
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -62,32 +90,35 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    testImplementation(libs.junit)
 
-    // Icons
+    // --- Icons ---
     implementation("androidx.compose.material:material-icons-extended")
 
-    // 1. Navigation & ViewModel
+    // --- 1. Navigation & ViewModel ---
     implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")
 
-    // 2. Supabase SDK (Compatible with Ktor 2.3.x)
-    implementation(platform("io.github.jan-tennert.supabase:bom:2.6.1"))
+    // --- 2. Supabase SDK ---
+    val supabaseVersion = "2.6.1"
+    implementation(platform("io.github.jan-tennert.supabase:bom:$supabaseVersion"))
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.github.jan-tennert.supabase:gotrue-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
 
-    // 3. Ktor Client Engine (2.3.12 matches Gemini SDK)
-    implementation("io.ktor:ktor-client-android:2.3.12")
-    implementation("io.ktor:ktor-client-core:2.3.12")
+    // --- 3. Ktor Client Engine (Compatible with Gemini & Supabase) ---
+    val ktorVersion = "2.3.12"
+    implementation("io.ktor:ktor-client-android:$ktorVersion")
+    implementation("io.ktor:ktor-client-core:$ktorVersion")
 
-    // 4. Gemini AI SDK
+    // --- 4. Gemini AI SDK ---
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
-    // 5. Serialization
+    // --- 5. Kotlinx Serialization ---
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
+    // --- Testing ---
+    testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

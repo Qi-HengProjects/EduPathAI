@@ -6,9 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,26 +43,30 @@ fun DailyTimelineScreen(
     var selectedDate by remember { mutableStateOf(today) }
     var currentYearMonth by remember { mutableStateOf(YearMonth.from(today)) }
 
-    val calendarListState = rememberLazyListState()
-
-    // Generate all days in the currently viewed month (1..28/30/31)
-    val daysInMonth = remember(currentYearMonth) {
-        val count = currentYearMonth.lengthOfMonth()
-        (1..count).map { currentYearMonth.atDay(it) }
-    }
-
     val fullDateFormatter = remember { DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy") }
     val monthHeaderFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy") }
 
-    // Auto-scroll calendar strip to the active selected date
-    LaunchedEffect(currentYearMonth, selectedDate) {
-        val targetIndex = (selectedDate.dayOfMonth - 1).coerceAtLeast(0)
-        if (selectedDate.month == currentYearMonth.month && selectedDate.year == currentYearMonth.year) {
-            calendarListState.animateScrollToItem(targetIndex)
+    // Build full monthly grid (weeks containing LocalDate or null for blank padding days)
+    val monthGrid = remember(currentYearMonth) {
+        val firstDayOfMonth = currentYearMonth.atDay(1)
+        val daysInMonth = currentYearMonth.lengthOfMonth()
+        // DayOfWeek: Monday = 1 ... Sunday = 7. Let's make Monday start column 0.
+        val startDayOfWeek = firstDayOfMonth.dayOfWeek.value - 1
+
+        val mutableList = mutableListOf<LocalDate?>()
+        // Padding blanks before the 1st of the month
+        repeat(startDayOfWeek) { mutableList.add(null) }
+        // Actual days of the month
+        for (day in 1..daysInMonth) {
+            mutableList.add(currentYearMonth.atDay(day))
         }
+        // Trailing blanks to complete the last row grid
+        while (mutableList.size % 7 != 0) {
+            mutableList.add(null)
+        }
+        mutableList.chunked(7)
     }
 
-    // Refresh schedule data on launch
     LaunchedEffect(Unit) {
         viewModel.loadTasks()
     }
@@ -77,29 +79,28 @@ fun DailyTimelineScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color(0xFF0B0F19),
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF131C2E)),
                 title = {
                     Column {
                         Text(
                             text = "Schedule & Timeline",
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White
                         )
                         Text(
                             text = selectedDate.format(fullDateFormatter),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = Color(0xFF38BDF8)
                         )
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.loadTasks() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh Schedule")
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF94A3B8))
                     }
                 }
             )
@@ -109,18 +110,28 @@ fun DailyTimelineScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .background(Color(0xFF0B0F19))
         ) {
-            // Month Header with Navigation Controls
-            Surface(
-                tonalElevation = 2.dp,
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()
+            // Full Month Grid Card Container
+            Card(
+                shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
+                    )
             ) {
-                Column(modifier = Modifier.padding(top = 10.dp, bottom = 6.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    // Month Navigation Header
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -129,15 +140,14 @@ fun DailyTimelineScreen(
                                 text = currentYearMonth.format(monthHeaderFormatter),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.White
                             )
 
-                            // "Today" shortcut button if user browses away from current month
                             if (currentYearMonth != YearMonth.from(today) || selectedDate != today) {
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                    color = Color(0xFF3B82F6).copy(alpha = 0.2f),
                                     modifier = Modifier.clickable {
                                         currentYearMonth = YearMonth.from(today)
                                         selectedDate = today
@@ -146,7 +156,7 @@ fun DailyTimelineScreen(
                                     Text(
                                         text = "Today",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        color = Color(0xFF38BDF8),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
@@ -154,20 +164,19 @@ fun DailyTimelineScreen(
                             }
                         }
 
-                        // Previous & Next Month Navigation
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             IconButton(
                                 onClick = {
                                     val prev = currentYearMonth.minusMonths(1)
                                     currentYearMonth = prev
-                                    selectedDate = prev.atDay(1)
+                                    selectedDate = prev.atDay(1).coerceAtMost(LocalDate.now())
                                 },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "Previous Month",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    tint = Color(0xFF94A3B8),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -183,8 +192,30 @@ fun DailyTimelineScreen(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                     contentDescription = "Next Month",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    tint = Color(0xFF94A3B8),
                                     modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Weekday Headers (Mon - Sun)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN").forEach { day ->
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = day,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF64748B)
                                 )
                             }
                         }
@@ -192,70 +223,53 @@ fun DailyTimelineScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Full Monthly Day Strip (1..31)
-                    LazyRow(
-                        state = calendarListState,
+                    // Month Grid Rows & Cells
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(daysInMonth, key = { it.toString() }) { date ->
-                            val isSelected = date == selectedDate
-                            val isCurrentToday = date == today
-                            val dayOfWeekStr = date.format(DateTimeFormatter.ofPattern("EEE")).uppercase()
-                            val dayNumStr = date.dayOfMonth.toString()
-
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                },
-                                modifier = Modifier
-                                    .width(56.dp)
-                                    .height(72.dp)
-                                    .clickable { selectedDate = date }
+                        monthGrid.forEach { week ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = dayOfWeekStr,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (isSelected) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                week.forEach { date ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1.2f)
+                                            .padding(2.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (date != null) {
+                                            val isSelected = date == selectedDate
+                                            val isCurrentToday = date == today
 
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    Text(
-                                        text = dayNumStr,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = if (isSelected) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        },
-                                        fontWeight = FontWeight.Bold
-                                    )
-
-                                    // Dot indicator for today's date
-                                    if (isCurrentToday && !isSelected) {
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Box(
-                                            modifier = Modifier
-                                                .size(4.dp)
-                                                .clip(CircleShape)
-                                                .background(MaterialTheme.colorScheme.primary)
-                                        )
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF0B0F19),
+                                                border = if (isCurrentToday && !isSelected) {
+                                                    androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
+                                                } else {
+                                                    null
+                                                },
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clickable { selectedDate = date }
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = date.dayOfMonth.toString(),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = if (isSelected || isCurrentToday) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (isSelected) Color.White else Color(0xFFE2E8F0)
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -264,14 +278,19 @@ fun DailyTimelineScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Timeline Tasks Content
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(Color(0xFF0B0F19))
             ) {
                 if (uiState.isLoading && uiState.tasks.isEmpty()) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = Color(0xFF3B82F6)
+                    )
                 } else if (uiState.tasks.isEmpty()) {
                     Column(
                         modifier = Modifier
@@ -284,23 +303,27 @@ fun DailyTimelineScreen(
                             imageVector = Icons.Default.EventNote,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            tint = Color(0xFF3B82F6).copy(alpha = 0.5f)
                         )
                         Text(
                             text = "No Tasks for This Date",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
                         Text(
                             text = "Ask AI in the Chat tab to plan a study block or tap 'Schedule' under any note.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color(0xFF94A3B8),
                             textAlign = TextAlign.Center
                         )
-                        Button(onClick = { viewModel.loadTasks() }) {
+                        Button(
+                            onClick = { viewModel.loadTasks() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                        ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Refresh Timeline")
+                            Text("Refresh Timeline", fontWeight = FontWeight.Bold)
                         }
                     }
                 } else {
@@ -311,17 +334,16 @@ fun DailyTimelineScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(vertical = 12.dp)
                     ) {
-                        // Study Progress Card
                         item {
                             val completedCount = uiState.tasks.count { it.isCompleted }
                             val progress = if (uiState.tasks.isNotEmpty()) completedCount.toFloat() / uiState.tasks.size else 0f
 
                             Card(
                                 shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-                                ),
-                                modifier = Modifier.fillMaxWidth()
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Row(
@@ -332,12 +354,13 @@ fun DailyTimelineScreen(
                                         Text(
                                             text = "Study Progress",
                                             fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.titleSmall
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = Color.White
                                         )
                                         Text(
                                             text = "$completedCount / ${uiState.tasks.size} Done",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary,
+                                            color = Color(0xFF38BDF8),
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -347,13 +370,14 @@ fun DailyTimelineScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(8.dp)
-                                            .clip(RoundedCornerShape(4.dp))
+                                            .clip(RoundedCornerShape(4.dp)),
+                                        color = Color(0xFF3B82F6),
+                                        trackColor = Color(0xFF1E293B)
                                     )
                                 }
                             }
                         }
 
-                        // Task List
                         items(uiState.tasks, key = { it.id ?: (it.title + it.startTime) }) { task ->
                             TimelineTaskCard(
                                 task = task,
@@ -377,23 +401,23 @@ fun TimelineTaskCard(
     val tagColor = try {
         Color(android.graphics.Color.parseColor(task.colorHex))
     } catch (_: Exception) {
-        MaterialTheme.colorScheme.primary
+        Color(0xFF3B82F6)
     }
 
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (task.isCompleted) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                Color(0xFF131C2E).copy(alpha = 0.4f)
             } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                Color(0xFF131C2E)
             }
         ),
         modifier = Modifier
             .fillMaxWidth()
             .border(
                 1.dp,
-                if (task.isCompleted) Color.Transparent else tagColor.copy(alpha = 0.35f),
+                if (task.isCompleted) Color.Transparent else tagColor.copy(alpha = 0.4f),
                 RoundedCornerShape(14.dp)
             )
             .clickable { onToggleComplete() }
@@ -412,7 +436,11 @@ fun TimelineTaskCard(
                 Checkbox(
                     checked = task.isCompleted,
                     onCheckedChange = { onToggleComplete() },
-                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = Color(0xFF3B82F6),
+                        uncheckedColor = Color(0xFF64748B),
+                        checkmarkColor = Color.White
+                    )
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -423,7 +451,7 @@ fun TimelineTaskCard(
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = if (task.isCompleted) FontWeight.Normal else FontWeight.Bold,
                         textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                        color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        color = if (task.isCompleted) Color(0xFF64748B) else Color.White,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -456,7 +484,7 @@ fun TimelineTaskCard(
                             Text(
                                 text = energyBadge,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color(0xFF94A3B8)
                             )
                         }
                     }
@@ -470,7 +498,7 @@ fun TimelineTaskCard(
                 Icon(
                     imageVector = Icons.Default.DeleteOutline,
                     contentDescription = "Delete Task",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                    tint = Color(0xFFEF4444).copy(alpha = 0.8f),
                     modifier = Modifier.size(18.dp)
                 )
             }

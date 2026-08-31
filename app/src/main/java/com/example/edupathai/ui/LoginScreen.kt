@@ -21,7 +21,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -53,7 +52,6 @@ fun LoginScreen(
     var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
 
-    // Dynamic Password Strength Rules
     val hasMinLength = password.length >= 8
     val hasUppercase = password.any { it.isUpperCase() }
     val hasLowercase = password.any { it.isLowerCase() }
@@ -97,7 +95,6 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // EduPath Header Brand
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xFF1E293B).copy(alpha = 0.8f),
@@ -132,12 +129,11 @@ fun LoginScreen(
             )
 
             Text(
-                text = if (isRegistering) "Set up your credentials to sync notebooks & schedules" else "Enter your student credentials to continue",
+                text = if (isRegistering) "Set up your credentials to sync notebooks & schedules" else "Enter your credentials to continue",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF94A3B8)
             )
 
-            // Segmented Mode Switcher
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = Color(0xFF1E293B),
@@ -183,7 +179,6 @@ fun LoginScreen(
                 }
             }
 
-            // Input Fields Card
             Card(
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
@@ -195,12 +190,12 @@ fun LoginScreen(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Email
+                    // Email Field updated to label "Email"
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
-                        label = { Text("Student / Institutional Email") },
-                        placeholder = { Text("user@student.tarc.edu.my") },
+                        label = { Text("Email") },
+                        placeholder = { Text("user@example.com") },
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF64748B)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -208,7 +203,6 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Password
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
@@ -230,13 +224,11 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Registration-Specific Password Security Module
                     AnimatedVisibility(visible = isRegistering) {
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // Confirm Password
                             OutlinedTextField(
                                 value = confirmPassword,
                                 onValueChange = { confirmPassword = it },
@@ -258,7 +250,6 @@ fun LoginScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            // Live Match Indicator
                             if (confirmPassword.isNotBlank()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -278,7 +269,6 @@ fun LoginScreen(
                                 }
                             }
 
-                            // Dynamic Strength Meter
                             if (password.isNotBlank()) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Row(
@@ -300,7 +290,6 @@ fun LoginScreen(
                                 }
                             }
 
-                            // Interactive Format Requirement Badges
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = Color(0xFF0F172A),
@@ -328,7 +317,6 @@ fun LoginScreen(
                         }
                     }
 
-                    // Remember Me with Pure White Typography (Login Only)
                     AnimatedVisibility(visible = !isRegistering) {
                         Row(
                             modifier = Modifier
@@ -349,7 +337,7 @@ fun LoginScreen(
                             Text(
                                 text = "Remember me",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White, // Pure White Text
+                                color = Color.White,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -357,7 +345,6 @@ fun LoginScreen(
                 }
             }
 
-            // Primary Action Button
             Button(
                 onClick = {
                     if (email.isBlank() || password.isBlank()) {

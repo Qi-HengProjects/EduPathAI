@@ -1,6 +1,7 @@
 package com.example.edupathai.ui.notes
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -43,25 +44,28 @@ fun NotesDirectoryScreen(
     }
 
     Scaffold(
+        containerColor = Color(0xFF0B0F19),
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0B0F19)),
                 title = {
                     Column {
                         Text(
                             text = "Subject Notebooks",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge
+                            fontWeight = FontWeight.ExtraBold,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White
                         )
                         Text(
-                            text = "Organize notes, generate mindmaps & quizzes",
+                            text = "Organize notes, mindmaps & quizzes",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = Color(0xFF94A3B8)
                         )
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.loadFolders() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF94A3B8))
                     }
                 }
             )
@@ -69,8 +73,9 @@ fun NotesDirectoryScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showCreateDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                containerColor = Color(0xFF3B82F6),
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Icon(Icons.Default.CreateNewFolder, contentDescription = "New Folder")
             }
@@ -79,10 +84,11 @@ fun NotesDirectoryScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color(0xFF0B0F19))
                 .padding(paddingValues)
         ) {
             if (uiState.isLoading && uiState.folders.isEmpty()) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color(0xFF3B82F6))
             } else if (uiState.folders.isEmpty()) {
                 Column(
                     modifier = Modifier
@@ -95,23 +101,27 @@ fun NotesDirectoryScreen(
                         imageVector = Icons.Default.FolderOpen,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        tint = Color(0xFF3B82F6).copy(alpha = 0.5f)
                     )
                     Text(
                         text = "No Notebooks Yet",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                     Text(
                         text = "Create your first subject notebook folder to start writing and saving notes.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color(0xFF94A3B8),
                         textAlign = TextAlign.Center
                     )
-                    Button(onClick = { showCreateDialog = true }) {
+                    Button(
+                        onClick = { showCreateDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                    ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Create Notebook")
+                        Text("Create Notebook", fontWeight = FontWeight.Bold)
                     }
                 }
             } else {
@@ -136,19 +146,21 @@ fun NotesDirectoryScreen(
         if (showCreateDialog) {
             AlertDialog(
                 onDismissRequest = { showCreateDialog = false },
-                title = { Text("New Subject Notebook", fontWeight = FontWeight.Bold) },
+                containerColor = Color(0xFF131C2E),
+                title = { Text("New Subject Notebook", fontWeight = FontWeight.Bold, color = Color.White) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         OutlinedTextField(
                             value = newFolderName,
                             onValueChange = { newFolderName = it },
                             label = { Text("Subject Name") },
-                            placeholder = { Text("e.g., Operating Systems") },
+                            placeholder = { Text("e.g., Computer Science, Math") },
                             singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        Text("Folder Color", style = MaterialTheme.typography.labelMedium)
+                        Text("Folder Color", style = MaterialTheme.typography.labelMedium, color = Color(0xFF94A3B8))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -157,7 +169,7 @@ fun NotesDirectoryScreen(
                                 val parsedColor = try {
                                     Color(android.graphics.Color.parseColor(hex))
                                 } catch (_: Exception) {
-                                    MaterialTheme.colorScheme.primary
+                                    Color(0xFF3B82F6)
                                 }
                                 Box(
                                     modifier = Modifier
@@ -190,14 +202,15 @@ fun NotesDirectoryScreen(
                                 showCreateDialog = false
                             }
                         },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
                         enabled = newFolderName.isNotBlank()
                     ) {
-                        Text("Create")
+                        Text("Create", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showCreateDialog = false }) {
-                        Text("Cancel")
+                        Text("Cancel", color = Color(0xFF94A3B8))
                     }
                 }
             )
@@ -215,15 +228,16 @@ fun FolderCardItem(
     val folderColor = try {
         Color(android.graphics.Color.parseColor(folder.colorHex))
     } catch (_: Exception) {
-        MaterialTheme.colorScheme.primary
+        Color(0xFF3B82F6)
     }
 
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
         modifier = Modifier
             .fillMaxWidth()
             .height(140.dp)
+            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
             .clickable { onClick() }
     ) {
         Column(
@@ -260,21 +274,22 @@ fun FolderCardItem(
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "Options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = Color(0xFF94A3B8)
                         )
                     }
 
                     DropdownMenu(
                         expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
+                        onDismissRequest = { showMenu = false },
+                        modifier = Modifier.background(Color(0xFF131C2E))
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            text = { Text("Delete", color = Color(0xFFEF4444)) },
                             leadingIcon = {
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
+                                    tint = Color(0xFFEF4444)
                                 )
                             },
                             onClick = {
@@ -291,13 +306,14 @@ fun FolderCardItem(
                     text = folder.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "Tap to open",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color(0xFF94A3B8)
                 )
             }
         }

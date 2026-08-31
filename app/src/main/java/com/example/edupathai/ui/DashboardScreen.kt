@@ -1,28 +1,29 @@
 package com.example.edupathai.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
+import com.example.edupathai.data.ProfileModel
 import com.example.edupathai.data.SupabaseProvider
-import com.example.edupathai.data.UserProfile
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,134 +31,274 @@ fun DashboardScreen(
     userId: String,
     onNavigateToSettings: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    var profile by remember { mutableStateOf<UserProfile?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    var profile by remember { mutableStateOf<ProfileModel?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    val lifecycleOwner = LocalLifecycleOwner.current
 
-    fun loadData() {
-        scope.launch {
+    fun loadProfile() {
+        coroutineScope.launch {
+            isLoading = true
             try {
-                val data = SupabaseProvider.db.from("profiles")
-                    .select { filter { eq("id", userId) } }
-                    .decodeSingle<UserProfile>()
-                profile = data
-            } catch (_: Exception) {
-                val userEmail = SupabaseProvider.auth.currentUserOrNull()?.email ?: ""
-                val defaultName = if (userEmail.contains("@")) userEmail.substringBefore("@") else "Student"
-                profile = UserProfile(id = userId, email = userEmail, username = defaultName)
+                val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
+                val fetched = withContext(Dispatchers.IO) {
+                    try {
+                        SupabaseProvider.client.from("profiles").select {
+                            filter { eq("id", currentUserId) }
+                        }.decodeList<ProfileModel>().firstOrNull()
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                profile = fetched ?: ProfileModel(
+                    id = currentUserId,
+                    username = SupabaseProvider.client.auth.currentUserOrNull()?.email?.substringBefore("@") ?: "Student",
+                    email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: "student@university.edu",
+                    learningStyle = "Visual"
+                )
             } finally {
                 isLoading = false
             }
         }
     }
 
-    // 每次进入页面或从 Settings 返回前台时自动刷新最新名字
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                loadData()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+    LaunchedEffect(userId) {
+        loadProfile()
     }
 
     Scaffold(
+        containerColor = Color(0xFF0B0F19),
         topBar = {
             TopAppBar(
-                title = { Text("Personal Dashboard", fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0B0F19)),
+                title = {
+                    Column {
+                        Text(
+                            text = "Student Dashboard",
+                            fontWeight = FontWeight.ExtraBold,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Overview & Learning Analytics",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                },
                 actions = {
-                    IconButton(onClick = { loadData() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    IconButton(onClick = { loadProfile() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF94A3B8))
                     }
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF94A3B8))
                     }
                 }
             )
         }
-    ) { padding ->
-        if (isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
+        ) {
+            // Pill Badge Header
+            item {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF1E293B).copy(alpha = 0.8f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                    modifier = Modifier.padding(bottom = 2.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(18.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.AccountCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(54.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF38BDF8))
                         )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            val displayName = remember(profile) {
-                                when {
-                                    !profile?.username.isNullOrBlank() -> profile!!.username!!
-                                    !profile?.email.isNullOrBlank() && profile!!.email!!.contains("@") -> profile!!.email!!.substringBefore("@")
-                                    else -> "Student"
-                                }
-                            }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "EduPath AI • Academic Workspace",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
 
-                            Text(
-                                text = displayName,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+            // User Identity Card (Cleaned without the residual box)
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(18.dp))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF3B82F6).copy(alpha = 0.2f))
+                                .border(1.5.dp, Color(0xFF3B82F6), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(32.dp)
                             )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = profile?.username ?: "Student",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = profile?.email ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Bio: ${profile?.bio?.ifBlank { "No bio added yet" } ?: "No bio added yet"}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = Color(0xFF94A3B8),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
+            }
 
+            // Learning Style & Metrics Card
+            item {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(18.dp))
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Learning Style Metrics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Psychology,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Learning Style Metrics",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF3B82F6).copy(alpha = 0.2f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3B82F6))
+                            ) {
+                                Text(
+                                    text = profile?.learningStyle ?: "Visual",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF38BDF8),
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
                         Text(
-                            text = "Current Style: ${profile?.learningStyle ?: "Not set"}",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Joined: ${profile?.createdAt?.take(10) ?: "Recently"}",
-                            style = MaterialTheme.typography.bodySmall
+                            text = "AI study features like Mindmaps, Flashcards, and Quizzes are automatically optimized for your learning style.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF94A3B8)
                         )
                     }
                 }
+            }
+
+            // Quick Stats Grid
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatCardItem(
+                        icon = Icons.Default.MenuBook,
+                        title = "Notebooks",
+                        subtitle = "Active Subjects",
+                        accent = Color(0xFF38BDF8),
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCardItem(
+                        icon = Icons.Default.CalendarMonth,
+                        title = "Timeline",
+                        subtitle = "Daily Schedule",
+                        accent = Color(0xFF10B981),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatCardItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+        modifier = modifier.border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(accent.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+            }
+            Column {
+                Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(text = subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
             }
         }
     }
