@@ -117,7 +117,7 @@ object GeminiService {
     }
 
     suspend fun generateResponse(prompt: String): String {
-        val plainTextInstruction = "Respond in clear, natural plain text. Do NOT use markdown syntax (no asterisks, no hashes, no bold tags, no horizontal lines).\n\n"
+        val plainTextInstruction = "88Respond in clear, natural plain text. Do NOT use markdown syntax (no asterisks, no hashes, no bold tags, no horizontal lines).\n\n"
         val raw = executeWithFallback("generateResponse") { model ->
             val response = model.generateContent(plainTextInstruction + prompt)
             response.text ?: "No response generated."

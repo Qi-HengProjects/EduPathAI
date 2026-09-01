@@ -32,21 +32,26 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
-    // Persistent in-memory transcript cache by session ID
     private val sessionMessagesCache = mutableMapOf<String, MutableList<ChatMessage>>()
 
     init {
         loadLatestSession()
     }
 
-    private fun loadLatestSession() {
+    fun loadLatestSession() {
         viewModelScope.launch {
-            val sessions = chatRepository.getSessions()
-            if (sessions.isNotEmpty()) {
-                val latest = sessions.first()
-                selectSession(latest.id ?: "", latest.title)
-            } else {
-                createNewSession()
+            try {
+                val sessions = chatRepository.getSessions()
+                if (sessions.isNotEmpty()) {
+                    val latest = sessions.first()
+                    selectSession(latest.id, latest.title)
+                } else {
+                    createNewSession()
+                }
+            } catch (_: Exception) {
+                if (_uiState.value.currentSessionId == null) {
+                    createNewSession()
+                }
             }
         }
     }
@@ -57,29 +62,32 @@ class ChatViewModel(
             return
         }
 
-        // 1. Immediately restore cached conversation if present
         val cached = sessionMessagesCache[sessionId] ?: mutableListOf()
         _uiState.update {
             it.copy(
                 currentSessionId = sessionId,
                 currentSessionTitle = title,
                 messages = cached.toList(),
-                isLoading = cached.isEmpty()
+                isLoading = cached.isEmpty(),
+                errorMessage = null
             )
         }
 
-        // 2. Query Supabase in background to sync any updates
         viewModelScope.launch {
-            val remoteMsgs = chatRepository.getMessages(sessionId)
-            if (remoteMsgs.isNotEmpty()) {
-                sessionMessagesCache[sessionId] = remoteMsgs.toMutableList()
-                _uiState.update {
-                    it.copy(
-                        messages = remoteMsgs,
-                        isLoading = false
-                    )
+            try {
+                val remoteMsgs = chatRepository.getMessages(sessionId)
+                if (remoteMsgs.isNotEmpty()) {
+                    sessionMessagesCache[sessionId] = remoteMsgs.toMutableList()
+                    _uiState.update {
+                        it.copy(
+                            messages = remoteMsgs,
+                            isLoading = false
+                        )
+                    }
+                } else {
+                    _uiState.update { it.copy(isLoading = false) }
                 }
-            } else {
+            } catch (_: Exception) {
                 _uiState.update { it.copy(isLoading = false) }
             }
         }
@@ -88,14 +96,15 @@ class ChatViewModel(
     fun createNewSession() {
         viewModelScope.launch {
             val newSession = chatRepository.createSession("New Conversation")
-            val sId = newSession.id ?: UUID.randomUUID().toString()
+            val sId = newSession.id.ifBlank { UUID.randomUUID().toString() }
             sessionMessagesCache[sId] = mutableListOf()
             _uiState.update {
                 it.copy(
                     currentSessionId = sId,
                     currentSessionTitle = newSession.title,
                     messages = emptyList(),
-                    userInput = ""
+                    userInput = "",
+                    errorMessage = null
                 )
             }
         }
@@ -116,7 +125,7 @@ class ChatViewModel(
             if (sId.isNullOrBlank() || sId == "NEW") {
                 val smartTitle = if (query.length > 28) query.take(25).trim() + "..." else query.trim()
                 val createdSession = chatRepository.createSession(smartTitle)
-                sId = createdSession.id ?: UUID.randomUUID().toString()
+                sId = createdSession.id.ifBlank { UUID.randomUUID().toString() }
                 isBrandNewSession = true
                 _uiState.update {
                     it.copy(
@@ -126,15 +135,18 @@ class ChatViewModel(
                 }
             }
 
+            val currentUid = chatRepository.getUserId()
+            val timeNow = Instant.now().toString()
+
             val userMessage = ChatMessage(
                 id = UUID.randomUUID().toString(),
                 sessionId = sId,
+                userId = currentUid,
                 sender = "user",
                 message = query,
-                createdAt = Instant.now().toString()
+                createdAt = timeNow
             )
 
-            // Cache immediately in local session memory
             val cacheList = sessionMessagesCache.getOrPut(sId) { mutableListOf() }
             cacheList.add(userMessage)
 
@@ -142,19 +154,23 @@ class ChatViewModel(
                 it.copy(
                     messages = cacheList.toList(),
                     userInput = "",
-                    isLoading = true
+                    isLoading = true,
+                    errorMessage = null
                 )
             }
 
-            // Persist user message to Supabase
-            chatRepository.sendMessage(userMessage)
+            try {
+                chatRepository.sendMessage(userMessage)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Warning: Failed to save to cloud (${e.message})") }
+            }
 
-            // Fetch AI completion from Gemini
             val reply = GeminiService.sendChatMessage(_uiState.value.messages, query)
 
             val aiMessage = ChatMessage(
                 id = UUID.randomUUID().toString(),
                 sessionId = sId,
+                userId = currentUid,
                 sender = "assistant",
                 message = reply,
                 createdAt = Instant.now().toString()
@@ -162,14 +178,18 @@ class ChatViewModel(
 
             cacheList.add(aiMessage)
 
-            // Persist AI message to Supabase
-            chatRepository.sendMessage(aiMessage)
+            try {
+                chatRepository.sendMessage(aiMessage)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Warning: Failed to save to cloud (${e.message})") }
+            }
 
-            // Smart title rename if needed
             val currentTitle = _uiState.value.currentSessionTitle
             if (isBrandNewSession || currentTitle == "New Conversation" || currentTitle == "AI Study Assistant") {
                 val smartTitle = if (query.length > 28) query.take(25).trim() + "..." else query.trim()
-                chatRepository.renameSession(sId, smartTitle)
+                try {
+                    chatRepository.renameSession(sId, smartTitle)
+                } catch (_: Exception) {}
                 _uiState.update { it.copy(currentSessionTitle = smartTitle) }
             }
 
@@ -188,30 +208,40 @@ class ChatViewModel(
 
     fun loadFolders() {
         viewModelScope.launch {
-            val folders = noteRepository.getFolders()
-            _uiState.update { it.copy(availableFolders = folders) }
+            try {
+                val folders = noteRepository.getFolders()
+                _uiState.update { it.copy(availableFolders = folders) }
+            } catch (_: Exception) {}
         }
     }
 
     fun saveMessageToNote(messageText: String, folderId: String, noteTitle: String) {
         viewModelScope.launch {
-            val newNote = Note(
-                folderId = folderId,
-                title = noteTitle.ifBlank { "AI Generated Note" },
-                content = messageText
-            )
-            noteRepository.saveNote(newNote)
-            _uiState.update { it.copy(notificationMessage = "Saved to notebook successfully!") }
+            try {
+                val newNote = Note(
+                    folderId = folderId,
+                    title = noteTitle.ifBlank { "AI Generated Note" },
+                    content = messageText
+                )
+                noteRepository.saveNote(newNote)
+                _uiState.update { it.copy(notificationMessage = "Saved to notebook successfully!") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to save note: ${e.message}") }
+            }
         }
     }
 
     fun createFolderAndSaveNote(messageText: String, folderName: String, colorHex: String, noteTitle: String) {
         viewModelScope.launch {
-            val folder = noteRepository.createFolder(folderName, colorHex)
-            if (folder?.id != null) {
-                saveMessageToNote(messageText, folder.id, noteTitle)
-            } else {
-                _uiState.update { it.copy(errorMessage = "Failed to create folder") }
+            try {
+                val folder = noteRepository.createFolder(folderName, colorHex)
+                if (folder?.id != null) {
+                    saveMessageToNote(messageText, folder.id, noteTitle)
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Failed to create folder") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to create folder: ${e.message}") }
             }
         }
     }
@@ -225,17 +255,21 @@ class ChatViewModel(
         date: LocalDate = LocalDate.now()
     ) {
         viewModelScope.launch {
-            val task = ScheduleTask(
-                title = title,
-                startTime = startTime,
-                endTime = endTime,
-                energyLevel = energyLevel,
-                taskType = "study",
-                colorHex = colorHex,
-                createdAt = "${date}T${startTime}:00Z"
-            )
-            scheduleRepository.createTask(task)
-            _uiState.update { it.copy(notificationMessage = "Scheduled task to Timeline!") }
+            try {
+                val task = ScheduleTask(
+                    title = title,
+                    startTime = startTime,
+                    endTime = endTime,
+                    energyLevel = energyLevel,
+                    taskType = "study",
+                    colorHex = colorHex,
+                    createdAt = "${date}T${startTime}:00Z"
+                )
+                scheduleRepository.createTask(task)
+                _uiState.update { it.copy(notificationMessage = "Scheduled task to Timeline!") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to schedule task: ${e.message}") }
+            }
         }
     }
 

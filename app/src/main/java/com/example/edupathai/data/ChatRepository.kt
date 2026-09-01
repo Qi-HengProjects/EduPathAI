@@ -6,48 +6,50 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.util.UUID
+
+class ChatRepositoryException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 class ChatRepository {
     private val client = SupabaseProvider.client
 
-    private fun getUserId(): String {
+    fun getUserId(): String {
         return SupabaseProvider.client.auth.currentUserOrNull()?.id
+            ?: SupabaseProvider.client.auth.currentSessionOrNull()?.user?.id
             ?: SupabaseProvider.getLocalUserId()
     }
 
     suspend fun getSessions(): List<ChatSession> = withContext(Dispatchers.IO) {
-        val userId = getUserId()
+        val currentUid = getUserId()
         try {
             client.from("chat_sessions").select {
-                filter { eq("user_id", userId) }
+                filter { eq("user_id", currentUid) }
+                order(column = "is_pinned", order = Order.DESCENDING)
                 order(column = "created_at", order = Order.DESCENDING)
             }.decodeList<ChatSession>()
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error fetching sessions: ${e.message}")
+            Log.e("ChatRepository", "Error fetching sessions: ${e.message}", e)
             emptyList()
         }
     }
 
     suspend fun createSession(title: String = "New Conversation", isPinned: Boolean = false): ChatSession = withContext(Dispatchers.IO) {
-        val userId = getUserId()
+        val currentUid = getUserId()
         val sessionId = UUID.randomUUID().toString()
         val timeNow = Instant.now().toString()
         val session = ChatSession(
             id = sessionId,
-            userId = userId,
+            userId = currentUid,
             title = title,
             isPinned = isPinned,
             createdAt = timeNow
         )
         try {
-            client.from("chat_sessions").insert(session)
+            client.from("chat_sessions").upsert(session)
             session
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error creating session: ${e.message}")
+            Log.e("ChatRepository", "Error creating session: ${e.message}", e)
             session
         }
     }
@@ -59,12 +61,10 @@ class ChatRepository {
                     set("title", newTitle)
                 }
             ) {
-                filter {
-                    eq("id", sessionId)
-                }
+                filter { eq("id", sessionId) }
             }
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error renaming session: ${e.message}")
+            Log.e("ChatRepository", "Error renaming session: ${e.message}", e)
         }
     }
 
@@ -75,12 +75,10 @@ class ChatRepository {
                     set("is_pinned", isPinned)
                 }
             ) {
-                filter {
-                    eq("id", sessionId)
-                }
+                filter { eq("id", sessionId) }
             }
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error pinning session: ${e.message}")
+            Log.e("ChatRepository", "Error pinning session: ${e.message}", e)
         }
     }
 
@@ -93,7 +91,7 @@ class ChatRepository {
                 filter { eq("id", sessionId) }
             }
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error deleting session: ${e.message}")
+            Log.e("ChatRepository", "Error deleting session: ${e.message}", e)
         }
     }
 
@@ -105,47 +103,48 @@ class ChatRepository {
                 order(column = "created_at", order = Order.ASCENDING)
             }.decodeList<ChatMessage>()
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error fetching messages: ${e.message}")
+            Log.e("ChatRepository", "Error fetching messages: ${e.message}", e)
             emptyList()
         }
     }
 
     suspend fun sendMessage(message: ChatMessage): ChatMessage = withContext(Dispatchers.IO) {
-        val userId = getUserId()
-        val msgId = if (message.id.isNullOrBlank()) UUID.randomUUID().toString() else message.id
-        val timeNow = message.createdAt ?: Instant.now().toString()
-        val msg = message.copy(
+        val currentUid = getUserId()
+        val msgId = if (message.id.isBlank()) UUID.randomUUID().toString() else message.id
+        val timeNow = if (message.createdAt.isBlank()) Instant.now().toString() else message.createdAt
+        val text = message.message.ifBlank { message.content }
+
+        // Ensure parent session exists before message insertion
+        if (message.sessionId.isNotBlank() && message.sessionId != "NEW") {
+            try {
+                val session = ChatSession(
+                    id = message.sessionId,
+                    userId = currentUid,
+                    title = if (text.length > 25) text.take(22) + "..." else text,
+                    isPinned = false,
+                    createdAt = timeNow
+                )
+                client.from("chat_sessions").upsert(session)
+            } catch (e: Exception) {
+                Log.w("ChatRepository", "Parent session upsert notice: ${e.message}")
+            }
+        }
+
+        val msg = ChatMessage(
             id = msgId,
-            userId = if (message.userId.isNullOrBlank()) userId else message.userId,
+            sessionId = message.sessionId,
+            userId = if (message.userId.isBlank()) currentUid else message.userId,
+            sender = message.sender,
+            message = text,
             createdAt = timeNow
         )
+
         try {
             client.from("chat_messages").insert(msg)
             msg
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Standard insert failed: ${e.message}")
-            try {
-                @Serializable
-                data class FallbackMessagePayload(
-                    val id: String,
-                    @SerialName("session_id") val sessionId: String,
-                    val sender: String,
-                    val message: String,
-                    @SerialName("created_at") val createdAt: String
-                )
-                client.from("chat_messages").insert(
-                    FallbackMessagePayload(
-                        id = msgId,
-                        sessionId = message.sessionId,
-                        sender = message.sender,
-                        message = message.message,
-                        createdAt = timeNow
-                    )
-                )
-            } catch (e2: Exception) {
-                Log.e("ChatRepository", "Fallback insert failed: ${e2.message}")
-            }
-            msg
+            Log.e("ChatRepository", "Database insert failed: ${e.message}", e)
+            throw ChatRepositoryException(e.localizedMessage ?: e.message ?: "Database insert error", e)
         }
     }
 

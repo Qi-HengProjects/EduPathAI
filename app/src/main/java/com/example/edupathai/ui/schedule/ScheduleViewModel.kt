@@ -13,14 +13,12 @@ import java.time.LocalDate
 
 data class ScheduleUiState(
     val tasks: List<ScheduleTask> = emptyList(),
-    val selectedDate: LocalDate = LocalDate.now(),
     val isLoading: Boolean = false,
-    val errorMessage: String? = null,
-    val userNotification: String? = null
+    val errorMessage: String? = null
 )
 
 class ScheduleViewModel(
-    private val scheduleRepository: ScheduleRepository = ScheduleRepository()
+    private val repository: ScheduleRepository = ScheduleRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScheduleUiState())
@@ -32,28 +30,12 @@ class ScheduleViewModel(
 
     fun loadTasks() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true) }
             try {
-                val list = scheduleRepository.getTasks()
+                val list = repository.getTasks()
                 _uiState.update { it.copy(tasks = list, isLoading = false) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
-            }
-        }
-    }
-
-    fun selectDate(date: LocalDate) {
-        _uiState.update { it.copy(selectedDate = date) }
-    }
-
-    fun createTask(task: ScheduleTask) {
-        viewModelScope.launch {
-            val created = scheduleRepository.createTask(task)
-            _uiState.update {
-                it.copy(
-                    tasks = it.tasks + created,
-                    userNotification = "Task scheduled successfully!"
-                )
             }
         }
     }
@@ -63,42 +45,44 @@ class ScheduleViewModel(
         startTime: String,
         endTime: String,
         energyLevel: String,
-        taskType: String = "study",
-        colorHex: String = "#3B82F6",
-        date: LocalDate = _uiState.value.selectedDate
+        taskType: String,
+        colorHex: String,
+        date: LocalDate = LocalDate.now()
     ) {
-        val task = ScheduleTask(
-            title = title,
-            startTime = startTime,
-            endTime = endTime,
-            energyLevel = energyLevel,
-            taskType = taskType,
-            colorHex = colorHex,
-            createdAt = "${date}T${startTime}:00Z"
-        )
-        createTask(task)
+        viewModelScope.launch {
+            val task = ScheduleTask(
+                title = title,
+                startTime = startTime,
+                endTime = endTime,
+                energyLevel = energyLevel,
+                taskType = taskType,
+                colorHex = colorHex,
+                createdAt = "${date}T${startTime}:00Z"
+            )
+            repository.createTask(task)
+            loadTasks()
+        }
     }
 
-    fun toggleTaskCompletion(task: ScheduleTask) {
-        val updated = task.copy(isCompleted = !task.isCompleted)
-        _uiState.update { state ->
-            state.copy(tasks = state.tasks.map { if (it.id == task.id) updated else it })
-        }
+    fun toggleTaskCompleted(task: ScheduleTask) {
+        val id = task.id ?: return
         viewModelScope.launch {
-            scheduleRepository.updateTask(updated)
+            repository.updateTaskCompletion(id, !task.isCompleted)
+            loadTasks()
+        }
+    }
+
+    fun updateTask(task: ScheduleTask) {
+        viewModelScope.launch {
+            repository.updateTask(task)
+            loadTasks()
         }
     }
 
     fun deleteTask(taskId: String) {
-        _uiState.update { state ->
-            state.copy(tasks = state.tasks.filter { it.id != taskId })
-        }
         viewModelScope.launch {
-            scheduleRepository.deleteTask(taskId)
+            repository.deleteTask(taskId)
+            loadTasks()
         }
-    }
-
-    fun clearNotification() {
-        _uiState.update { it.copy(userNotification = null, errorMessage = null) }
     }
 }

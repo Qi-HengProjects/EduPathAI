@@ -3,6 +3,7 @@ package com.example.edupathai.ui.chatbox
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.edupathai.data.ChatRepository
+import com.example.edupathai.data.ChatRepositoryException
 import com.example.edupathai.data.ChatSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,10 +30,12 @@ class ChatHistoryViewModel(
 
     fun loadSessions() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 val sessions = chatRepository.getSessions()
                 _uiState.update { it.copy(sessions = sessions, isLoading = false) }
+            } catch (e: ChatRepositoryException) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
             }
@@ -46,8 +49,12 @@ class ChatHistoryViewModel(
 
     fun togglePin(sessionId: String, isPinned: Boolean) {
         viewModelScope.launch {
-            chatRepository.togglePinSession(sessionId, !isPinned)
-            loadSessions()
+            try {
+                chatRepository.togglePinSession(sessionId, !isPinned)
+                loadSessions()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
         }
     }
 
@@ -58,8 +65,12 @@ class ChatHistoryViewModel(
 
     fun renameSession(sessionId: String, newTitle: String) {
         viewModelScope.launch {
-            chatRepository.renameSession(sessionId, newTitle)
-            loadSessions()
+            try {
+                chatRepository.renameSession(sessionId, newTitle)
+                loadSessions()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
         }
     }
 
@@ -70,8 +81,16 @@ class ChatHistoryViewModel(
 
     fun deleteSession(sessionId: String) {
         viewModelScope.launch {
-            chatRepository.deleteSession(sessionId)
-            loadSessions()
+            try {
+                chatRepository.deleteSession(sessionId)
+                loadSessions()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
         }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
 }
