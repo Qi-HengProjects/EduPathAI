@@ -137,7 +137,6 @@ fun DailyTimelineScreen(
                         .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(20.dp))
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        // Month Header Navigation
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -168,7 +167,6 @@ fun DailyTimelineScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Weekday Names Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceAround
@@ -187,7 +185,6 @@ fun DailyTimelineScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Days Grid
                         val firstDayOfMonth = displayedMonth.atDay(1)
                         val daysInMonth = displayedMonth.lengthOfMonth()
                         val startOffset = (firstDayOfMonth.dayOfWeek.value - DayOfWeek.MONDAY.value + 7) % 7
@@ -259,7 +256,7 @@ fun DailyTimelineScreen(
                 }
             }
 
-            // Daily Progress & Status Card (with Overdue Indicator)
+            // Daily Progress & Status Card
             item {
                 val isToday = uiState.selectedDate == LocalDate.now()
                 val dayOfWeek = uiState.selectedDate.format(DateTimeFormatter.ofPattern("EEEE"))
@@ -282,7 +279,6 @@ fun DailyTimelineScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Left Section: Date & Optional "Today" Badge
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -316,7 +312,6 @@ fun DailyTimelineScreen(
 
                             Spacer(modifier = Modifier.width(8.dp))
 
-                            // Right Section: Completion and Overdue Badges
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -357,7 +352,6 @@ fun DailyTimelineScreen(
                             }
                         }
 
-                        // Progress Bar
                         LinearProgressIndicator(
                             progress = { progress },
                             modifier = Modifier
@@ -521,7 +515,6 @@ fun TaskTimelineItemCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Overdue Alert Badge
                     if (task.isOverdue) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
@@ -538,7 +531,6 @@ fun TaskTimelineItemCard(
                         }
                     }
 
-                    // Time Badge
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = Color(0xFF1E293B)
@@ -551,7 +543,6 @@ fun TaskTimelineItemCard(
                         )
                     }
 
-                    // Energy Level Badge
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = baseColor.copy(alpha = 0.2f)

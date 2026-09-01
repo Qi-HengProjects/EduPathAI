@@ -1,16 +1,19 @@
 package com.example.edupathai
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.edupathai.data.SupabaseProvider
 import com.example.edupathai.ui.DashboardScreen
+import com.example.edupathai.ui.LoginScreen
 import com.example.edupathai.ui.SettingsScreen
 import com.example.edupathai.ui.chatbox.ChatHistoryScreen
 import com.example.edupathai.ui.chatbox.ChatHistoryViewModel
@@ -25,6 +28,8 @@ import com.example.edupathai.ui.notes.NotesViewModel
 import com.example.edupathai.ui.schedule.DailyTimelineScreen
 import com.example.edupathai.ui.schedule.ScheduleViewModel
 import com.example.edupathai.ui.theme.EduPathAITheme
+import io.github.jan.supabase.gotrue.auth
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,7 +44,16 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainAppNavigator() {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
+
+    var isLoggedIn by rememberSaveable { mutableStateOf(true) }
     val currentUserId = remember { SupabaseProvider.getLocalUserId() }
+
+    // Shared ScheduleViewModel so Dashboard and Schedule Timeline are always 100% synchronized
+    val scheduleViewModel: ScheduleViewModel = viewModel()
+
     var currentDestination by remember { mutableStateOf(AppDestination.DASHBOARD) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showChatHistory by rememberSaveable { mutableStateOf(false) }
@@ -49,11 +63,35 @@ fun MainAppNavigator() {
     var selectedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSessionTitle by rememberSaveable { mutableStateOf<String?>(null) }
 
+    if (!isLoggedIn) {
+        LoginScreen(
+            onLoginSuccess = {
+                isLoggedIn = true
+            }
+        )
+        return
+    }
+
     if (showSettings) {
         BackHandler { showSettings = false }
         SettingsScreen(
             userId = currentUserId,
-            onBack = { showSettings = false }
+            onBack = { showSettings = false },
+            onLoggedOut = {
+                coroutineScope.launch {
+                    try {
+                        SupabaseProvider.client.auth.signOut()
+                    } catch (_: Exception) {}
+                    prefs.edit().apply {
+                        putBoolean("remember_me", false)
+                        remove("saved_email")
+                        remove("saved_password")
+                        apply()
+                    }
+                    isLoggedIn = false
+                    showSettings = false
+                }
+            }
         )
         return
     }
@@ -94,6 +132,7 @@ fun MainAppNavigator() {
             AppDestination.DASHBOARD -> {
                 DashboardScreen(
                     userId = currentUserId,
+                    scheduleViewModel = scheduleViewModel,
                     onNavigateToSettings = { showSettings = true },
                     onNavigateToNotes = { currentDestination = AppDestination.NOTES },
                     onNavigateToSchedule = { currentDestination = AppDestination.SCHEDULE }
@@ -137,7 +176,6 @@ fun MainAppNavigator() {
                 )
             }
             AppDestination.SCHEDULE -> {
-                val scheduleViewModel: ScheduleViewModel = viewModel()
                 DailyTimelineScreen(
                     viewModel = scheduleViewModel,
                     onNavigateBack = { currentDestination = AppDestination.DASHBOARD }

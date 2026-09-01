@@ -17,13 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.edupathai.data.NoteRepository
 import com.example.edupathai.data.ProfileModel
-import com.example.edupathai.data.ScheduleRepository
-import com.example.edupathai.data.ScheduleTask
 import com.example.edupathai.data.SupabaseProvider
+import com.example.edupathai.ui.schedule.ScheduleViewModel
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,22 +34,20 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun DashboardScreen(
     userId: String,
+    scheduleViewModel: ScheduleViewModel,
     onNavigateToSettings: () -> Unit,
     onNavigateToNotes: () -> Unit,
     onNavigateToSchedule: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var profile by remember { mutableStateOf<ProfileModel?>(null) }
-    var todayTasks by remember { mutableStateOf<List<ScheduleTask>>(emptyList()) }
-    var folderCount by remember { mutableStateOf(0) }
-    var isLoading by remember { mutableStateOf(true) }
+    val scheduleUiState by scheduleViewModel.uiState.collectAsState()
 
-    val scheduleRepository = remember { ScheduleRepository() }
+    var profile by remember { mutableStateOf<ProfileModel?>(null) }
+    var folderCount by remember { mutableStateOf(0) }
     val noteRepository = remember { NoteRepository() }
 
     LaunchedEffect(userId) {
         coroutineScope.launch {
-            isLoading = true
             val fetchedProfile = withContext(Dispatchers.IO) {
                 try {
                     SupabaseProvider.client.from("profiles").select {
@@ -61,20 +59,30 @@ fun DashboardScreen(
             }
             profile = fetchedProfile ?: ProfileModel(id = userId, username = "Student", email = "student@edupath.ai")
 
-            val allTasks = scheduleRepository.getTasks()
-            val todayStr = LocalDate.now().toString()
-            todayTasks = allTasks.filter { it.effectiveDate == todayStr }
-
             val folders = noteRepository.getFolders()
             folderCount = folders.size
-
-            isLoading = false
         }
     }
 
-    val completedCount = todayTasks.count { it.isCompleted }
-    val overdueCount = todayTasks.count { it.isOverdue }
-    val totalCount = todayTasks.size
+    // Refresh schedule data on entering dashboard
+    LaunchedEffect(Unit) {
+        scheduleViewModel.loadTasks()
+    }
+
+    val todayStr = LocalDate.now().toString()
+
+    // Show tasks scheduled for today plus any uncompleted overdue tasks
+    val dashboardTasks = remember(scheduleUiState.tasks, todayStr) {
+        scheduleUiState.tasks.filter { it.effectiveDate == todayStr || it.isOverdue }
+    }
+
+    val todayScheduledTasks = remember(scheduleUiState.tasks, todayStr) {
+        scheduleUiState.tasks.filter { it.effectiveDate == todayStr }
+    }
+
+    val completedCount = todayScheduledTasks.count { it.isCompleted }
+    val overdueCount = scheduleUiState.tasks.count { it.isOverdue }
+    val totalCount = todayScheduledTasks.size
     val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
 
     LazyColumn(
@@ -212,7 +220,7 @@ fun DashboardScreen(
                     Column(modifier = Modifier.padding(14.dp)) {
                         Icon(Icons.Default.Today, contentDescription = null, tint = Color(0xFF10B981))
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = "${todayTasks.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "${todayScheduledTasks.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
                         Text(text = "Tasks Today", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
                     }
                 }
@@ -233,7 +241,7 @@ fun DashboardScreen(
             }
         }
 
-        if (todayTasks.isEmpty()) {
+        if (dashboardTasks.isEmpty()) {
             item {
                 Card(
                     shape = RoundedCornerShape(14.dp),
@@ -253,7 +261,7 @@ fun DashboardScreen(
                 }
             }
         } else {
-            items(todayTasks) { task ->
+            items(dashboardTasks, key = { it.id ?: (it.title + it.startTime) }) { task ->
                 val cardBorder = when {
                     task.isCompleted -> Color(0xFF1E293B)
                     task.isOverdue -> Color(0xFFEF4444).copy(alpha = 0.5f)
@@ -261,11 +269,11 @@ fun DashboardScreen(
                 }
 
                 Card(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                        .border(1.dp, cardBorder, RoundedCornerShape(14.dp))
                 ) {
                     Row(
                         modifier = Modifier
@@ -273,23 +281,32 @@ fun DashboardScreen(
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(if (task.isCompleted) Color(0xFF10B981) else if (task.isOverdue) Color(0xFFEF4444) else Color(0xFF38BDF8))
+                        Checkbox(
+                            checked = task.isCompleted,
+                            onCheckedChange = { scheduleViewModel.toggleTaskCompletion(task) },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFF10B981),
+                                uncheckedColor = if (task.isOverdue) Color(0xFFEF4444) else Color(0xFF64748B),
+                                checkmarkColor = Color.White
+                            )
                         )
 
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = task.title,
                                 fontWeight = FontWeight.Bold,
-                                color = if (task.isCompleted) Color(0xFF64748B) else Color.White,
+                                color = when {
+                                    task.isCompleted -> Color(0xFF64748B)
+                                    task.isOverdue -> Color(0xFFFCA5A5)
+                                    else -> Color.White
+                                },
+                                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "${task.startTime} - ${task.endTime}",
                                 color = Color(0xFF94A3B8),
@@ -300,10 +317,11 @@ fun DashboardScreen(
                         if (task.isOverdue) {
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFFEF4444).copy(alpha = 0.2f)
+                                color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f))
                             ) {
                                 Text(
-                                    text = "Overdue",
+                                    text = "⚠️ Overdue",
                                     color = Color(0xFFEF4444),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
