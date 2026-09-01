@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -28,10 +29,14 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.edupathai.data.ProfileModel
 import com.example.edupathai.data.SupabaseProvider
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.providers.builtin.Email
+import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun LoginScreen(
@@ -43,13 +48,15 @@ fun LoginScreen(
     val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
 
     var isRegistering by rememberSaveable { mutableStateOf(false) }
+    var fullName by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
+    var confirmPassword by rememberSaveable { mutableStateOf("") }
     var rememberMe by rememberSaveable { mutableStateOf(false) }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
 
-    // Load saved credentials on launch if Remember Me was enabled
     LaunchedEffect(Unit) {
         val savedRememberMe = prefs.getBoolean("remember_me", false)
         rememberMe = savedRememberMe
@@ -63,7 +70,7 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0B0F19))
-            .padding(24.dp),
+            .padding(20.dp),
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -79,9 +86,8 @@ fun LoginScreen(
                     .padding(24.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Header
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
@@ -90,26 +96,89 @@ fun LoginScreen(
                 )
 
                 Text(
-                    text = if (isRegistering) "Create Account" else "Welcome Back",
+                    text = if (isRegistering) "Create Student Account" else "Welcome Back",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White
                 )
 
                 Text(
-                    text = if (isRegistering) "Register with your student email" else "Sign in to access your dashboard & notes",
+                    text = if (isRegistering) "Sign up with your academic details to start learning" else "Sign in to access your notes, AI study plans & timeline",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF94A3B8),
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
-                // Email Input
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0B0F19), RoundedCornerShape(12.dp))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (!isRegistering) Color(0xFF3B82F6) else Color.Transparent)
+                            .clickable { isRegistering = false }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Sign In",
+                            color = if (!isRegistering) Color.White else Color(0xFF94A3B8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isRegistering) Color(0xFF3B82F6) else Color.Transparent)
+                            .clickable { isRegistering = true }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Register",
+                            color = if (isRegistering) Color.White else Color(0xFF94A3B8),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                if (isRegistering) {
+                    OutlinedTextField(
+                        value = fullName,
+                        onValueChange = { fullName = it },
+                        label = { Text("Full Name / Username *") },
+                        placeholder = { Text("e.g. Alex Tan", color = Color(0xFF64748B)) },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF38BDF8)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF3B82F6),
+                            unfocusedBorderColor = Color(0xFF1E293B)
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Email Address") },
+                    label = { Text("Email Address *") },
                     placeholder = { Text("student@university.edu", color = Color(0xFF64748B)) },
                     leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF38BDF8)) },
                     singleLine = true,
@@ -124,24 +193,26 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Password Input
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text("Password *") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF38BDF8)) },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
                                 imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                contentDescription = null,
                                 tint = Color(0xFF94A3B8)
                             )
                         }
                     },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = if (isRegistering) ImeAction.Next else ImeAction.Done
+                    ),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -153,7 +224,36 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Remember Me Checkbox Row (Only on Login tab)
+                if (isRegistering) {
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text("Confirm Password *") },
+                        leadingIcon = { Icon(Icons.Default.LockReset, contentDescription = null, tint = Color(0xFF38BDF8)) },
+                        trailingIcon = {
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (confirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = Color(0xFF94A3B8)
+                                )
+                            }
+                        },
+                        visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF3B82F6),
+                            unfocusedBorderColor = Color(0xFF1E293B)
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 if (!isRegistering) {
                     Row(
                         modifier = Modifier
@@ -181,13 +281,31 @@ fun LoginScreen(
                     }
                 }
 
-                // Action Button (Login / Register)
                 Button(
                     onClick = {
-                        if (email.isBlank() || password.isBlank()) {
-                            Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                        val trimmedEmail = email.trim()
+                        val trimmedPassword = password.trim()
+
+                        if (trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
+                            Toast.makeText(context, "Please fill in all required fields", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
+
+                        if (isRegistering) {
+                            if (fullName.isBlank()) {
+                                Toast.makeText(context, "Please enter your name", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            if (trimmedPassword != confirmPassword.trim()) {
+                                Toast.makeText(context, "Passwords do not match", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            if (trimmedPassword.length < 6) {
+                                Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                        }
+
                         focusManager.clearFocus()
                         isLoading = true
 
@@ -195,27 +313,54 @@ fun LoginScreen(
                             try {
                                 if (isRegistering) {
                                     SupabaseProvider.client.auth.signUpWith(Email) {
-                                        this.email = email.trim()
-                                        this.password = password
-                                    }
-                                    Toast.makeText(
-                                        context,
-                                        "Registration successful! Please check your email inbox to verify your account before logging in.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                    isRegistering = false
-                                } else {
-                                    SupabaseProvider.client.auth.signInWith(Email) {
-                                        this.email = email.trim()
-                                        this.password = password
+                                        this.email = trimmedEmail
+                                        this.password = trimmedPassword
                                     }
 
-                                    // Save or clear credentials based on Remember Me checkbox
+                                    val newUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: SupabaseProvider.getLocalUserId()
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            val profile = ProfileModel(
+                                                id = newUserId,
+                                                username = fullName.trim(),
+                                                email = trimmedEmail,
+                                                bio = "Student at TAR UMT"
+                                            )
+                                            SupabaseProvider.client.from("profiles").upsert(profile)
+                                        } catch (_: Exception) {}
+                                    }
+
+                                    Toast.makeText(
+                                        context,
+                                        "Account created successfully! Signing in...",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+
+                                    try {
+                                        SupabaseProvider.client.auth.signInWith(Email) {
+                                            this.email = trimmedEmail
+                                            this.password = trimmedPassword
+                                        }
+                                        onLoginSuccess()
+                                    } catch (_: Exception) {
+                                        Toast.makeText(
+                                            context,
+                                            "Account created! Please check your email to verify before signing in.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        isRegistering = false
+                                    }
+                                } else {
+                                    SupabaseProvider.client.auth.signInWith(Email) {
+                                        this.email = trimmedEmail
+                                        this.password = trimmedPassword
+                                    }
+
                                     prefs.edit().apply {
                                         putBoolean("remember_me", rememberMe)
                                         if (rememberMe) {
-                                            putString("saved_email", email.trim())
-                                            putString("saved_password", password)
+                                            putString("saved_email", trimmedEmail)
+                                            putString("saved_password", trimmedPassword)
                                         } else {
                                             remove("saved_email")
                                             remove("saved_password")
@@ -226,8 +371,23 @@ fun LoginScreen(
                                     onLoginSuccess()
                                 }
                             } catch (e: Exception) {
-                                val errorMsg = e.message ?: "Authentication failed"
-                                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                val errorStr = e.message.orEmpty()
+                                if (errorStr.contains("429") || errorStr.contains("rate", ignoreCase = true) || errorStr.contains("too many", ignoreCase = true)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Email rate limit exceeded (Error 429). If your account was already registered, switch to 'Sign In' directly.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else if (errorStr.contains("already registered", ignoreCase = true) || errorStr.contains("User already exists", ignoreCase = true)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Account already exists! Please Sign In with your password.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    isRegistering = false
+                                } else {
+                                    Toast.makeText(context, errorStr.ifBlank { "Authentication failed. Please try again." }, Toast.LENGTH_LONG).show()
+                                }
                             } finally {
                                 isLoading = false
                             }
@@ -244,7 +404,7 @@ fun LoginScreen(
                         CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
                     } else {
                         Text(
-                            text = if (isRegistering) "Create Student Account" else "Sign In",
+                            text = if (isRegistering) "Create Account" else "Sign In",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -252,11 +412,8 @@ fun LoginScreen(
                     }
                 }
 
-                // Switch Between Sign In / Sign Up
                 TextButton(
-                    onClick = {
-                        isRegistering = !isRegistering
-                    }
+                    onClick = { isRegistering = !isRegistering }
                 ) {
                     Text(
                         text = if (isRegistering) "Already have an account? Sign In" else "Don't have an account? Register",

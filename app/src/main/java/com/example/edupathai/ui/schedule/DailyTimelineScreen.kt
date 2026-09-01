@@ -1,6 +1,7 @@
 package com.example.edupathai.ui.schedule
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +48,7 @@ fun DailyTimelineScreen(
 
     var displayedMonth by remember { mutableStateOf(YearMonth.from(uiState.selectedDate)) }
     var showAddTaskDialog by rememberSaveable { mutableStateOf(false) }
+    var showPastTasksExpanded by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(uiState.userNotification) {
         uiState.userNotification?.let {
@@ -67,8 +69,16 @@ fun DailyTimelineScreen(
         uiState.tasks.filter { it.effectiveDate == selectedDateString }
     }
 
-    val completedCount = tasksForSelectedDate.count { it.isCompleted }
-    val overdueCount = tasksForSelectedDate.count { it.isOverdue }
+    // Split tasks into Active and Past (Completed) groups
+    val activeTasks = remember(tasksForSelectedDate) {
+        tasksForSelectedDate.filter { !it.isCompleted }
+    }
+    val pastTasks = remember(tasksForSelectedDate) {
+        tasksForSelectedDate.filter { it.isCompleted }
+    }
+
+    val completedCount = pastTasks.size
+    val overdueCount = activeTasks.count { it.isOverdue }
     val totalCount = tasksForSelectedDate.size
     val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
 
@@ -256,7 +266,7 @@ fun DailyTimelineScreen(
                 }
             }
 
-            // Daily Progress & Status Card
+            // Daily Progress Summary Card
             item {
                 val isToday = uiState.selectedDate == LocalDate.now()
                 val dayOfWeek = uiState.selectedDate.format(DateTimeFormatter.ofPattern("EEEE"))
@@ -365,7 +375,7 @@ fun DailyTimelineScreen(
                 }
             }
 
-            // Task Items Header
+            // SECTION 1: Active Tasks
             item {
                 Row(
                     modifier = Modifier
@@ -375,26 +385,25 @@ fun DailyTimelineScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Scheduled Tasks",
+                        text = "Active Tasks",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
-                        text = "${tasksForSelectedDate.size} items",
+                        text = "${activeTasks.size} pending",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFF94A3B8)
                     )
                 }
             }
 
-            // Filtered Tasks for Selected Date
-            if (tasksForSelectedDate.isEmpty()) {
+            if (activeTasks.isEmpty() && pastTasks.isEmpty()) {
                 item {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 28.dp, bottom = 40.dp),
+                            .padding(top = 24.dp, bottom = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -418,13 +427,87 @@ fun DailyTimelineScreen(
                         )
                     }
                 }
+            } else if (activeTasks.isEmpty() && pastTasks.isNotEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E).copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "All active tasks for this day are completed! 🎉",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF10B981),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
             } else {
-                items(tasksForSelectedDate, key = { it.id ?: (it.title + it.startTime) }) { task ->
+                items(activeTasks, key = { it.id ?: (it.title + it.startTime) }) { task ->
                     TaskTimelineItemCard(
                         task = task,
                         onToggleCompletion = { viewModel.toggleTaskCompletion(task) },
                         onDelete = { task.id?.let { viewModel.deleteTask(it) } }
                     )
+                }
+            }
+
+            // SECTION 2: Past / Completed Tasks Section
+            if (pastTasks.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showPastTasksExpanded = !showPastTasksExpanded }
+                            .padding(horizontal = 18.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (showPastTasksExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Past / Completed Tasks (${pastTasks.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF10B981)
+                            )
+                        }
+
+                        Text(
+                            text = if (showPastTasksExpanded) "Hide" else "Show",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                }
+
+                if (showPastTasksExpanded) {
+                    items(pastTasks, key = { it.id ?: (it.title + it.startTime) }) { task ->
+                        TaskTimelineItemCard(
+                            task = task,
+                            onToggleCompletion = { viewModel.toggleTaskCompletion(task) },
+                            onDelete = { task.id?.let { viewModel.deleteTask(it) } }
+                        )
+                    }
                 }
             }
         }
@@ -470,7 +553,7 @@ fun TaskTimelineItemCard(
 
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+        colors = CardDefaults.cardColors(containerColor = if (task.isCompleted) Color(0xFF0F172A).copy(alpha = 0.8f) else Color(0xFF131C2E)),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 5.dp)
@@ -515,7 +598,7 @@ fun TaskTimelineItemCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (task.isOverdue) {
+                    if (task.isOverdue && !task.isCompleted) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = Color(0xFFEF4444).copy(alpha = 0.2f),
@@ -538,19 +621,19 @@ fun TaskTimelineItemCard(
                         Text(
                             text = "${task.startTime} - ${task.endTime}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF38BDF8),
+                            color = if (task.isCompleted) Color(0xFF64748B) else Color(0xFF38BDF8),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
 
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = baseColor.copy(alpha = 0.2f)
+                        color = if (task.isCompleted) Color(0xFF1E293B) else baseColor.copy(alpha = 0.2f)
                     ) {
                         Text(
                             text = task.energyLevel,
                             style = MaterialTheme.typography.labelSmall,
-                            color = baseColor,
+                            color = if (task.isCompleted) Color(0xFF64748B) else baseColor,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
