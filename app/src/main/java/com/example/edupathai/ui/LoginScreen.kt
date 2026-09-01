@@ -46,6 +46,7 @@ fun LoginScreen(
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
+    val scrollState = rememberScrollState()
 
     var isRegistering by rememberSaveable { mutableStateOf(false) }
     var fullName by rememberSaveable { mutableStateOf("") }
@@ -71,7 +72,9 @@ fun LoginScreen(
             .fillMaxSize()
             .background(Color(0xFF0B0F19))
             .statusBarsPadding()
-            .padding(20.dp),
+            .imePadding()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 20.dp, vertical = 24.dp),
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -84,8 +87,7 @@ fun LoginScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -331,35 +333,13 @@ fun LoginScreen(
                                         } catch (_: Exception) {}
                                     }
 
+                                    isRegistering = false
+                                    confirmPassword = ""
                                     Toast.makeText(
                                         context,
-                                        "Account created successfully! Signing in...",
-                                        Toast.LENGTH_SHORT
+                                        "Account created! Please tap Sign In to continue.",
+                                        Toast.LENGTH_LONG
                                     ).show()
-
-                                    try {
-                                        SupabaseProvider.client.auth.signInWith(Email) {
-                                            this.email = trimmedEmail
-                                            this.password = trimmedPassword
-                                        }
-                                        onLoginSuccess()
-                                    } catch (signInErr: Exception) {
-                                        val msg = signInErr.message.orEmpty()
-                                        if (msg.contains("Email not confirmed", ignoreCase = true)) {
-                                            Toast.makeText(
-                                                context,
-                                                "Registration complete! If email confirmation is enabled in Supabase, please verify or turn off 'Confirm email' in Supabase Auth settings.",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Account created! Please Sign In with your password.",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                        isRegistering = false
-                                    }
                                 } else {
                                     SupabaseProvider.client.auth.signInWith(Email) {
                                         this.email = trimmedEmail
@@ -385,7 +365,7 @@ fun LoginScreen(
                                 if (errorStr.contains("Email not confirmed", ignoreCase = true)) {
                                     Toast.makeText(
                                         context,
-                                        "Email not confirmed. Please confirm the user in your Supabase Dashboard or turn off 'Confirm email' in Supabase Auth Providers.",
+                                        "Email not confirmed. Please confirm in your Supabase Dashboard or turn off 'Confirm email' in Supabase Auth Providers.",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 } else if (errorStr.contains("Invalid login credentials", ignoreCase = true)) {
@@ -397,9 +377,10 @@ fun LoginScreen(
                                 } else if (errorStr.contains("429") || errorStr.contains("rate", ignoreCase = true) || errorStr.contains("too many", ignoreCase = true)) {
                                     Toast.makeText(
                                         context,
-                                        "Email rate limit exceeded (Error 429). Please try again later or sign in directly.",
+                                        "Email rate limit exceeded (Error 429). Please tap 'Sign In' directly.",
                                         Toast.LENGTH_LONG
                                     ).show()
+                                    isRegistering = false
                                 } else if (errorStr.contains("already registered", ignoreCase = true) || errorStr.contains("User already exists", ignoreCase = true)) {
                                     Toast.makeText(
                                         context,

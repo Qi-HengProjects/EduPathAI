@@ -12,7 +12,6 @@ import kotlinx.coroutines.launch
 
 data class ChatHistoryUiState(
     val sessions: List<ChatSession> = emptyList(),
-    val searchQuery: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null
 )
@@ -30,67 +29,49 @@ class ChatHistoryViewModel(
 
     fun loadSessions() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true) }
             try {
-                val list = chatRepository.getSessions()
-                _uiState.update { it.copy(sessions = list, isLoading = false) }
+                val sessions = chatRepository.getSessions()
+                _uiState.update { it.copy(sessions = sessions, isLoading = false) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
             }
         }
     }
 
-    fun updateSearchQuery(query: String) {
-        _uiState.update { it.copy(searchQuery = query) }
+    fun togglePin(session: ChatSession) {
+        val sId = session.id ?: return
+        togglePin(sId, session.isPinned)
     }
 
-    fun createNewSession(title: String = "New Conversation") {
+    fun togglePin(sessionId: String, isPinned: Boolean) {
         viewModelScope.launch {
-            val session = chatRepository.createSession(title = title, isPinned = false)
-            if (session != null) {
-                _uiState.update { it.copy(sessions = listOf(session) + it.sessions) }
-            }
+            chatRepository.togglePinSession(sessionId, !isPinned)
+            loadSessions()
         }
+    }
+
+    fun renameSession(session: ChatSession, newTitle: String) {
+        val sId = session.id ?: return
+        renameSession(sId, newTitle)
     }
 
     fun renameSession(sessionId: String, newTitle: String) {
-        if (newTitle.isBlank()) return
         viewModelScope.launch {
-            chatRepository.renameSession(sessionId, newTitle.trim())
-            _uiState.update { state ->
-                val updated = state.sessions.map {
-                    if (it.id == sessionId) it.copy(title = newTitle.trim()) else it
-                }
-                state.copy(sessions = updated)
-            }
+            chatRepository.renameSession(sessionId, newTitle)
+            loadSessions()
         }
     }
 
-    fun toggleSessionPin(sessionId: String, currentPinnedState: Boolean) {
-        viewModelScope.launch {
-            val newPinState = !currentPinnedState
-            chatRepository.togglePinSession(sessionId, newPinState)
-            _uiState.update { state ->
-                val updated = state.sessions.map {
-                    if (it.id == sessionId) it.copy(isPinned = newPinState) else it
-                }.sortedByDescending { it.isPinned }
-                state.copy(sessions = updated)
-            }
-        }
-    }
-
-    fun togglePinSession(sessionId: String, isPinned: Boolean) = toggleSessionPin(sessionId, !isPinned)
-
-    fun togglePin(session: ChatSession) {
-        toggleSessionPin(session.id, session.isPinned)
+    fun deleteSession(session: ChatSession) {
+        val sId = session.id ?: return
+        deleteSession(sId)
     }
 
     fun deleteSession(sessionId: String) {
         viewModelScope.launch {
             chatRepository.deleteSession(sessionId)
-            _uiState.update { state ->
-                state.copy(sessions = state.sessions.filter { it.id != sessionId })
-            }
+            loadSessions()
         }
     }
 }

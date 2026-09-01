@@ -46,6 +46,10 @@ fun DailyTimelineScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    LaunchedEffect(Unit) {
+        viewModel.loadTasks()
+    }
+
     var displayedMonth by remember { mutableStateOf(YearMonth.from(uiState.selectedDate)) }
     var showAddTaskDialog by rememberSaveable { mutableStateOf(false) }
     var showPastTasksExpanded by rememberSaveable { mutableStateOf(true) }
@@ -69,7 +73,6 @@ fun DailyTimelineScreen(
         uiState.tasks.filter { it.effectiveDate == selectedDateString }
     }
 
-    // Split tasks into Active and Past (Completed) groups
     val activeTasks = remember(tasksForSelectedDate) {
         tasksForSelectedDate.filter { !it.isCompleted }
     }
@@ -478,7 +481,7 @@ fun DailyTimelineScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = if (showPastTasksExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                imageVector = if (showPastTasksExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                                 contentDescription = null,
                                 tint = Color(0xFF10B981),
                                 modifier = Modifier.size(20.dp)

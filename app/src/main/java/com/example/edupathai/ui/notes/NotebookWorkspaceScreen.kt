@@ -282,6 +282,7 @@ fun AiWorkspaceIsland(
                         SimplifyView(
                             text = uiState.simplifiedText ?: "No summary available.",
                             onRegenerate = { viewModel.generateSimplifiedNotes(forceRegenerate = true) },
+                            onAppendToNote = { viewModel.appendSummaryToNoteContent() },
                             onSchedule = { viewModel.scheduleNoteTask("Review Simplified") },
                             onDismiss = { viewModel.dismissAiIsland() }
                         )
@@ -313,7 +314,7 @@ fun AiWorkspaceIsland(
                             isFinished = uiState.isQuizFinished,
                             onSelectOption = { answer ->
                                 viewModel.selectQuizAnswer(answer)
-                                viewModel.submitQuizAnswer() // Auto-submits on click to validate and advance
+                                viewModel.submitQuizAnswer()
                             },
                             onNext = { viewModel.nextQuizQuestion() },
                             onReset = { viewModel.resetQuiz() },
@@ -325,6 +326,52 @@ fun AiWorkspaceIsland(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SimplifyView(
+    text: String,
+    onRegenerate: () -> Unit,
+    onAppendToNote: () -> Unit,
+    onSchedule: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("AI Summary", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                IconButton(onClick = onRegenerate, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(16.dp))
+                }
+                FilledTonalButton(onClick = onAppendToNote, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
+                    Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Save to Note", style = MaterialTheme.typography.labelSmall)
+                }
+                FilledTonalButton(onClick = onSchedule, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Schedule", style = MaterialTheme.typography.labelSmall)
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(text = text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -528,43 +575,6 @@ fun InteractiveQuizCard(
                 Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
             }
         }
-    }
-}
-
-@Composable
-fun SimplifyView(
-    text: String,
-    onRegenerate: () -> Unit,
-    onSchedule: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("AI Summary", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onRegenerate, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(16.dp))
-                }
-                FilledTonalButton(onClick = onSchedule, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
-                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Schedule", style = MaterialTheme.typography.labelSmall)
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(text = text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

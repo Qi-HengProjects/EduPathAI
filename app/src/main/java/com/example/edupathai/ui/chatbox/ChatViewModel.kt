@@ -2,37 +2,26 @@ package com.example.edupathai.ui.chatbox
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.edupathai.data.ChatMessage
-import com.example.edupathai.data.ChatRepository
-import com.example.edupathai.data.ChatSession
-import com.example.edupathai.data.GeminiService
-import com.example.edupathai.data.Note
-import com.example.edupathai.data.NoteFolder
-import com.example.edupathai.data.NoteRepository
-import com.example.edupathai.data.ScheduleRepository
-import com.example.edupathai.data.ScheduleTask
-import kotlinx.coroutines.Job
+import com.example.edupathai.data.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
+import java.util.UUID
 
 data class ChatUiState(
-    val sessions: List<ChatSession> = emptyList(),
     val currentSessionId: String? = null,
-    val currentSessionTitle: String = "Study Assistant",
+    val currentSessionTitle: String = "AI Study Assistant",
     val messages: List<ChatMessage> = emptyList(),
     val userInput: String = "",
     val isLoading: Boolean = false,
-    val isSavingNote: Boolean = false,
-    val isSchedulingTask: Boolean = false,
     val availableFolders: List<NoteFolder> = emptyList(),
     val notificationMessage: String? = null,
-    val actionFeedbackMessage: String? = null
-) {
-    val inputText: String get() = userInput
-}
+    val errorMessage: String? = null
+)
 
 class ChatViewModel(
     private val chatRepository: ChatRepository = ChatRepository(),
@@ -43,22 +32,130 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
-    private var currentChatJob: Job? = null
-
     init {
-        loadSessions()
-        loadFolders()
+        loadLatestSession()
     }
 
-    fun loadSessions() {
+    private fun loadLatestSession() {
         viewModelScope.launch {
             val sessions = chatRepository.getSessions()
-            _uiState.update { it.copy(sessions = sessions) }
-            if (sessions.isNotEmpty() && _uiState.value.currentSessionId == null) {
-                val firstSession = sessions.first()
-                selectSession(firstSession.id, firstSession.title)
+            if (sessions.isNotEmpty()) {
+                val latest = sessions.first()
+                selectSession(latest.id ?: "", latest.title)
+            } else {
+                createNewSession()
             }
         }
+    }
+
+    fun selectSession(sessionId: String, title: String) {
+        if (sessionId.isBlank() || sessionId == "NEW") {
+            createNewSession()
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    currentSessionId = sessionId,
+                    currentSessionTitle = title,
+                    messages = emptyList(),
+                    isLoading = true
+                )
+            }
+            val msgs = chatRepository.getMessages(sessionId)
+            _uiState.update {
+                it.copy(
+                    messages = msgs,
+                    isLoading = false
+                )
+            }
+        }
+    }
+
+    fun createNewSession() {
+        viewModelScope.launch {
+            val newSession = chatRepository.createSession("New Conversation")
+            _uiState.update {
+                it.copy(
+                    currentSessionId = newSession.id,
+                    currentSessionTitle = newSession.title,
+                    messages = emptyList(),
+                    userInput = ""
+                )
+            }
+        }
+    }
+
+    fun updateUserInput(input: String) {
+        _uiState.update { it.copy(userInput = input) }
+    }
+
+    fun sendMessage() {
+        val query = _uiState.value.userInput.trim()
+        if (query.isBlank()) return
+
+        viewModelScope.launch {
+            var sId = _uiState.value.currentSessionId
+            if (sId.isNullOrBlank() || sId == "NEW") {
+                val smartTitle = if (query.length > 28) query.take(25).trim() + "..." else query.trim()
+                val createdSession = chatRepository.createSession(smartTitle)
+                sId = createdSession.id ?: UUID.randomUUID().toString()
+                _uiState.update {
+                    it.copy(
+                        currentSessionId = sId,
+                        currentSessionTitle = createdSession.title
+                    )
+                }
+            }
+
+            val userMessage = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                sessionId = sId,
+                sender = "user",
+                message = query,
+                createdAt = Instant.now().toString()
+            )
+
+            _uiState.update {
+                it.copy(
+                    messages = it.messages + userMessage,
+                    userInput = "",
+                    isLoading = true
+                )
+            }
+
+            chatRepository.sendMessage(userMessage)
+
+            val reply = GeminiService.sendChatMessage(_uiState.value.messages, query)
+
+            val aiMessage = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                sessionId = sId,
+                sender = "assistant",
+                message = reply,
+                createdAt = Instant.now().toString()
+            )
+
+            chatRepository.sendMessage(aiMessage)
+
+            val currentTitle = _uiState.value.currentSessionTitle
+            if (currentTitle == "New Conversation" || currentTitle == "AI Study Assistant" || currentTitle.isBlank()) {
+                val smartTitle = if (query.length > 28) query.take(25).trim() + "..." else query.trim()
+                chatRepository.renameSession(sId, smartTitle)
+                _uiState.update { it.copy(currentSessionTitle = smartTitle) }
+            }
+
+            _uiState.update {
+                it.copy(
+                    messages = it.messages + aiMessage,
+                    isLoading = false
+                )
+            }
+        }
+    }
+
+    fun stopThinking() {
+        _uiState.update { it.copy(isLoading = false) }
     }
 
     fun loadFolders() {
@@ -68,184 +165,25 @@ class ChatViewModel(
         }
     }
 
-    fun loadAvailableFolders() = loadFolders()
-
-    fun selectSession(sessionId: String, title: String) {
-        stopThinking()
-        _uiState.update { it.copy(currentSessionId = sessionId, currentSessionTitle = title) }
+    fun saveMessageToNote(messageText: String, folderId: String, noteTitle: String) {
         viewModelScope.launch {
-            val messages = chatRepository.getMessages(sessionId)
-            _uiState.update { it.copy(messages = messages) }
-        }
-    }
-
-    fun loadSession(sessionId: String, title: String) = selectSession(sessionId, title)
-
-    fun createNewSession() {
-        stopThinking()
-        viewModelScope.launch {
-            val newSession = chatRepository.createSession("New Conversation")
-            if (newSession != null) {
-                _uiState.update {
-                    it.copy(
-                        sessions = listOf(newSession) + it.sessions,
-                        currentSessionId = newSession.id,
-                        currentSessionTitle = newSession.title,
-                        messages = emptyList()
-                    )
-                }
-            }
-        }
-    }
-
-    fun startNewSession() = createNewSession()
-
-    fun deleteSession(sessionId: String) {
-        viewModelScope.launch {
-            chatRepository.deleteSession(sessionId)
-            val remaining = _uiState.value.sessions.filter { it.id != sessionId }
-            _uiState.update { it.copy(sessions = remaining) }
-            if (_uiState.value.currentSessionId == sessionId) {
-                if (remaining.isNotEmpty()) {
-                    val first = remaining.first()
-                    selectSession(first.id, first.title)
-                } else {
-                    createNewSession()
-                }
-            }
-        }
-    }
-
-    fun updateUserInput(input: String) {
-        _uiState.update { it.copy(userInput = input) }
-    }
-
-    fun updateInputText(input: String) = updateUserInput(input)
-
-    fun sendMessage() {
-        val text = _uiState.value.userInput.trim()
-        if (text.isBlank() || _uiState.value.isLoading) return
-
-        var activeSessionId = _uiState.value.currentSessionId
-
-        currentChatJob = viewModelScope.launch {
-            _uiState.update { it.copy(userInput = "", isLoading = true) }
-
-            try {
-                if (activeSessionId == null) {
-                    val title = GeminiService.generateSessionTitle(text)
-                    val newSession = chatRepository.createSession(title)
-                    if (newSession != null) {
-                        activeSessionId = newSession.id
-                        _uiState.update {
-                            it.copy(
-                                currentSessionId = newSession.id,
-                                currentSessionTitle = newSession.title,
-                                sessions = listOf(newSession) + it.sessions
-                            )
-                        }
-                    }
-                }
-
-                val sessionId = activeSessionId ?: return@launch
-
-                val userMsg = ChatMessage(sessionId = sessionId, sender = "user", message = text)
-                chatRepository.sendMessage(userMsg)
-                _uiState.update { it.copy(messages = it.messages + userMsg) }
-
-                val responseText = GeminiService.sendChatMessage(_uiState.value.messages, text)
-                val aiMsg = ChatMessage(sessionId = sessionId, sender = "ai", message = responseText)
-                chatRepository.sendMessage(aiMsg)
-
-                _uiState.update {
-                    it.copy(
-                        messages = it.messages + aiMsg,
-                        isLoading = false
-                    )
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                // User intentionally pressed "Stop Thinking"
-                _uiState.update { it.copy(isLoading = false, notificationMessage = "Generation stopped.") }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        notificationMessage = "Error connecting to AI: ${e.message}"
-                    )
-                }
-            }
-        }
-    }
-
-    fun stopThinking() {
-        currentChatJob?.cancel()
-        currentChatJob = null
-        _uiState.update { it.copy(isLoading = false) }
-    }
-
-    fun saveMessageToNote(
-        messageText: String,
-        folderId: String,
-        noteTitle: String,
-        onSuccess: (() -> Unit)? = null
-    ) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSavingNote = true) }
-            val entry = Note(
+            val newNote = Note(
                 folderId = folderId,
-                title = noteTitle.ifBlank { "Saved AI Note" },
+                title = noteTitle.ifBlank { "AI Generated Note" },
                 content = messageText
             )
-            val result = noteRepository.saveNote(entry)
-            _uiState.update {
-                it.copy(
-                    isSavingNote = false,
-                    notificationMessage = if (result != null) "Note saved successfully!" else "Failed to save note"
-                )
-            }
-            if (result != null) onSuccess?.invoke()
+            noteRepository.saveNote(newNote)
+            _uiState.update { it.copy(notificationMessage = "Saved to notebook successfully!") }
         }
     }
 
-    fun saveAiResponseToNotes(
-        folderId: String,
-        noteTitle: String,
-        noteContent: String,
-        onSuccess: (() -> Unit)? = null
-    ) = saveMessageToNote(noteContent, folderId, noteTitle, onSuccess)
-
-    fun createFolderAndSaveNote(
-        messageText: String,
-        folderName: String,
-        colorHex: String,
-        noteTitle: String,
-        onSuccess: (() -> Unit)? = null
-    ) {
+    fun createFolderAndSaveNote(messageText: String, folderName: String, colorHex: String, noteTitle: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSavingNote = true) }
-            val newFolder = noteRepository.createFolder(folderName, colorHex)
-            if (newFolder != null) {
-                val entry = Note(
-                    folderId = newFolder.id,
-                    title = noteTitle.ifBlank { "Saved AI Note" },
-                    content = messageText
-                )
-                noteRepository.saveNote(entry)
-                loadFolders()
-                _uiState.update {
-                    it.copy(
-                        isSavingNote = false,
-                        notificationMessage = "Note saved to new folder!"
-                    )
-                }
-                onSuccess?.invoke()
+            val folder = noteRepository.createFolder(folderName, colorHex)
+            if (folder?.id != null) {
+                saveMessageToNote(messageText, folder.id, noteTitle)
             } else {
-                _uiState.update {
-                    it.copy(
-                        isSavingNote = false,
-                        notificationMessage = "Failed to create folder"
-                    )
-                }
+                _uiState.update { it.copy(errorMessage = "Failed to create folder") }
             }
         }
     }
@@ -256,42 +194,24 @@ class ChatViewModel(
         endTime: String,
         energyLevel: String,
         colorHex: String,
-        taskType: String = "study",
-        onSuccess: (() -> Unit)? = null
+        date: LocalDate = LocalDate.now()
     ) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSchedulingTask = true) }
             val task = ScheduleTask(
                 title = title,
                 startTime = startTime,
                 endTime = endTime,
                 energyLevel = energyLevel,
-                colorHex = colorHex
+                taskType = "study",
+                colorHex = colorHex,
+                createdAt = "${date}T${startTime}:00Z"
             )
-            val created = scheduleRepository.createTask(task)
-            _uiState.update {
-                it.copy(
-                    isSchedulingTask = false,
-                    notificationMessage = if (created != null) "Scheduled on your Timeline!" else "Failed to schedule task"
-                )
-            }
-            if (created != null) onSuccess?.invoke()
+            scheduleRepository.createTask(task)
+            _uiState.update { it.copy(notificationMessage = "Scheduled task to Timeline!") }
         }
     }
 
-    fun scheduleTimelineTask(
-        title: String,
-        startTime: String,
-        endTime: String,
-        energyLevel: String,
-        taskType: String,
-        colorHex: String,
-        onSuccess: (() -> Unit)? = null
-    ) = scheduleStudySession(title, startTime, endTime, energyLevel, colorHex, taskType, onSuccess)
-
     fun clearNotification() {
-        _uiState.update { it.copy(notificationMessage = null, actionFeedbackMessage = null) }
+        _uiState.update { it.copy(notificationMessage = null, errorMessage = null) }
     }
-
-    fun clearFeedbackMessage() = clearNotification()
 }

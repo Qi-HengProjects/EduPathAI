@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,11 +54,25 @@ fun ChatScreen(
     val listState = rememberLazyListState()
 
     var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
+    var currentlySpeakingId by remember { mutableStateOf<String?>(null) }
+
     DisposableEffect(context) {
         var ttsInstance: TextToSpeech? = null
         ttsInstance = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ttsInstance?.language = Locale.US
+                ttsInstance?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {
+                        currentlySpeakingId = utteranceId
+                    }
+                    override fun onDone(utteranceId: String?) {
+                        currentlySpeakingId = null
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        currentlySpeakingId = null
+                    }
+                })
             }
         }
         textToSpeech = ttsInstance
@@ -81,7 +96,11 @@ fun ChatScreen(
 
     LaunchedEffect(initialSessionId) {
         if (!initialSessionId.isNullOrBlank() && initialSessionId != uiState.currentSessionId) {
-            viewModel.selectSession(initialSessionId, initialSessionTitle ?: "AI Study Assistant")
+            if (initialSessionId == "NEW") {
+                viewModel.createNewSession()
+            } else {
+                viewModel.selectSession(initialSessionId, initialSessionTitle ?: "AI Study Assistant")
+            }
         }
     }
 
@@ -195,10 +214,20 @@ fun ChatScreen(
                 }
 
                 items(uiState.messages) { message ->
+                    val msgId = message.id ?: message.hashCode().toString()
+                    val isThisSpeaking = currentlySpeakingId == msgId
+
                     ChatMessageBubble(
                         message = message,
-                        onSpeakText = { text ->
-                            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UTTERANCE_ID_${System.currentTimeMillis()}")
+                        isSpeaking = isThisSpeaking,
+                        onToggleSpeak = { text ->
+                            if (isThisSpeaking || textToSpeech?.isSpeaking == true) {
+                                textToSpeech?.stop()
+                                currentlySpeakingId = null
+                            } else {
+                                textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, msgId)
+                                currentlySpeakingId = msgId
+                            }
                         },
                         onSaveToNote = { content ->
                             selectedNoteContent = content
@@ -375,14 +404,15 @@ fun ChatScreen(
 @Composable
 fun ChatMessageBubble(
     message: ChatMessage,
-    onSpeakText: (String) -> Unit,
+    isSpeaking: Boolean,
+    onToggleSpeak: (String) -> Unit,
     onSaveToNote: (String) -> Unit,
     onSchedulePlan: (String) -> Unit
 ) {
     val isUser = message.sender.equals("user", ignoreCase = true)
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    val messageText = message.message.ifBlank { message.content }
+    val messageText = message.message
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -415,16 +445,26 @@ fun ChatMessageBubble(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AssistChip(
-                    onClick = { onSpeakText(messageText) },
-                    label = { Text("Listen", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA855F7)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.VolumeUp,
-                            contentDescription = "Read aloud",
-                            modifier = Modifier.size(14.dp),
-                            tint = Color(0xFFA855F7)
+                    onClick = { onToggleSpeak(messageText) },
+                    label = {
+                        Text(
+                            if (isSpeaking) "Stop" else "Listen",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSpeaking) Color(0xFFEF4444) else Color(0xFFA855F7),
+                            fontWeight = if (isSpeaking) FontWeight.Bold else FontWeight.Normal
                         )
                     },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isSpeaking) Icons.Default.Stop else Icons.Default.VolumeUp,
+                            contentDescription = if (isSpeaking) "Stop audio" else "Read aloud",
+                            modifier = Modifier.size(14.dp),
+                            tint = if (isSpeaking) Color(0xFFEF4444) else Color(0xFFA855F7)
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if (isSpeaking) Color(0xFFEF4444).copy(alpha = 0.15f) else Color.Transparent
+                    ),
                     modifier = Modifier.height(28.dp)
                 )
 
@@ -493,11 +533,11 @@ fun ConfirmSchedulePlanDialog(
     var taskTitle by rememberSaveable { mutableStateOf(initialTitle) }
     var startTime by rememberSaveable { mutableStateOf(defaultStart) }
     var endTime by rememberSaveable { mutableStateOf(defaultEnd) }
-    var selectedEnergy by rememberSaveable { mutableStateOf("medium") }
+    var selectedEnergy by rememberSaveable { mutableStateOf("Medium") }
     var selectedType by rememberSaveable { mutableStateOf("study") }
     var selectedColor by rememberSaveable { mutableStateOf("#3B82F6") }
 
-    val energyOptions = listOf("high" to "🔥 High Energy", "medium" to "⚡ Medium", "low" to "🌱 Low Energy")
+    val energyOptions = listOf("High" to "🔥 High Energy", "Medium" to "⚡ Medium", "Low" to "🌱 Low Energy")
     val typeOptions = listOf("study" to "Study", "revision" to "Revision", "assignment" to "Assignment", "quiz" to "Quiz")
     val taskColors = listOf("#3B82F6", "#10B981", "#8B5CF6", "#F59E0B", "#EF4444")
 
@@ -563,7 +603,7 @@ fun ConfirmSchedulePlanDialog(
                 ) {
                     items(energyOptions) { (key, label) ->
                         FilterChip(
-                            selected = selectedEnergy == key,
+                            selected = selectedEnergy.equals(key, ignoreCase = true),
                             onClick = { selectedEnergy = key },
                             label = { Text(label, style = MaterialTheme.typography.labelSmall) }
                         )
@@ -577,7 +617,7 @@ fun ConfirmSchedulePlanDialog(
                 ) {
                     items(typeOptions) { (key, label) ->
                         FilterChip(
-                            selected = selectedType == key,
+                            selected = selectedType.equals(key, ignoreCase = true),
                             onClick = { selectedType = key },
                             label = { Text(label, style = MaterialTheme.typography.labelSmall) }
                         )
