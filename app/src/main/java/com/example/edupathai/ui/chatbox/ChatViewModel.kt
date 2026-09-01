@@ -147,7 +147,17 @@ class ChatViewModel(
                 )
             }
 
-            chatRepository.sendMessage(userMessage)
+            // The in-memory cache above is what keeps the chat looking "saved" during
+            // this session. If the Supabase insert actually fails, the message is only
+            // ever in that cache and disappears the next time this session is loaded
+            // from Supabase (e.g. after the app is relaunched). Surface that instead of
+            // silently continuing as if it succeeded.
+            var saveFailed = false
+            try {
+                chatRepository.sendMessage(userMessage)
+            } catch (e: Exception) {
+                saveFailed = true
+            }
 
             val reply = GeminiService.sendChatMessage(_uiState.value.messages, query)
 
@@ -162,7 +172,11 @@ class ChatViewModel(
             )
 
             cacheList.add(aiMessage)
-            chatRepository.sendMessage(aiMessage)
+            try {
+                chatRepository.sendMessage(aiMessage)
+            } catch (e: Exception) {
+                saveFailed = true
+            }
 
             val currentTitle = _uiState.value.currentSessionTitle
             if (isBrandNewSession || currentTitle == "New Conversation" || currentTitle == "AI Study Assistant") {
@@ -174,7 +188,12 @@ class ChatViewModel(
             _uiState.update {
                 it.copy(
                     messages = cacheList.toList(),
-                    isLoading = false
+                    isLoading = false,
+                    errorMessage = if (saveFailed) {
+                        "This message wasn't saved to your account and may not appear after you reopen the app. Check your connection and try again."
+                    } else {
+                        it.errorMessage
+                    }
                 )
             }
         }

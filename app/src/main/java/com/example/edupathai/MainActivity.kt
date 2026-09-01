@@ -62,7 +62,6 @@ fun MainAppNavigator() {
     var currentUserId by rememberSaveable { mutableStateOf("") }
 
     val scheduleViewModel: ScheduleViewModel = viewModel()
-    val chatViewModel: ChatViewModel = viewModel()
 
     var currentDestination by remember { mutableStateOf(AppDestination.DASHBOARD) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -126,6 +125,15 @@ fun MainAppNavigator() {
         )
         return
     }
+
+    // IMPORTANT: created only after we know isLoggedIn == true, i.e. after the
+    // Supabase auth session has finished restoring. Creating this earlier (it used
+    // to live at the top of this composable) let ChatViewModel's init block query
+    // Supabase before auth.currentUserOrNull() had a value, so it silently fell back
+    // to the local placeholder user id, fetched/created sessions under the wrong
+    // user, and any messages sent in that window were saved under a user id that
+    // didn't match the real signed-in user — invisible on next load.
+    val chatViewModel: ChatViewModel = viewModel()
 
     if (showSettings) {
         BackHandler { showSettings = false }

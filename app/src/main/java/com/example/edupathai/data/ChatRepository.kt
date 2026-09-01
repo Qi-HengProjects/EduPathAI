@@ -104,6 +104,15 @@ class ChatRepository {
         }
     }
 
+    /**
+     * Inserts a chat message into Supabase. This used to swallow every exception and
+     * hand back the message as if it had been saved, so a message that only ever made
+     * it into the in-memory UI cache looked identical - to both the UI and the logs -
+     * to one that was actually persisted. The only symptom was messages vanishing the
+     * next time the session was loaded from Supabase (e.g. after relaunching the app).
+     * This now rethrows so the caller (ChatViewModel) knows the save failed and can
+     * surface that to the user instead of silently pretending it worked.
+     */
     suspend fun sendMessage(message: ChatMessage): ChatMessage = withContext(Dispatchers.IO) {
         val currentUid = getUserId()
         val msgId = if (message.id.isBlank()) UUID.randomUUID().toString() else message.id
@@ -124,8 +133,12 @@ class ChatRepository {
             client.from("chat_messages").insert(msg)
             msg
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error inserting chat message: ${e.message}", e)
-            msg
+            Log.e(
+                "ChatRepository",
+                "Error inserting chat message (sessionId=${msg.sessionId}, userId=${msg.userId}): ${e.message}",
+                e
+            )
+            throw e
         }
     }
 
