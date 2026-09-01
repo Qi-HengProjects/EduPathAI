@@ -25,7 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -124,7 +123,7 @@ fun NotebookWorkspaceScreen(
                             shape = RoundedCornerShape(10.dp),
                             color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF131C2E),
                             border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
-                            modifier = Modifier.clickable { note.id?.let { viewModel.selectNote(it) } }
+                            modifier = Modifier.clickable { note.id.let { viewModel.selectNote(it) } }
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -187,7 +186,7 @@ fun NotebookWorkspaceScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3. Main Content Area (Dynamic based on ViewMode)
+                // 3. Main Content Area
                 Box(modifier = Modifier.fillMaxSize().weight(1f)) {
                     when (uiState.viewMode) {
                         NoteViewMode.EDITOR -> {
@@ -441,7 +440,7 @@ fun FlashcardItemView(index: Int, card: Flashcard) {
 @Composable
 fun MindmapDiagramView(data: MindmapData) {
     val branchColors = listOf(
-        Color(0xFF10B981), // Emerald
+        Color(0xFF10B981), // Green
         Color(0xFF8B5CF6), // Purple
         Color(0xFFF59E0B), // Amber
         Color(0xFF3B82F6), // Blue
@@ -450,22 +449,21 @@ fun MindmapDiagramView(data: MindmapData) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
+        contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
     ) {
-        // Root Node Header
+        // 1. Root Node
         item {
-            Box(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Surface(
                     color = Color(0xFF2563EB),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(24.dp),
                     shadowElevation = 4.dp
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("🎯", fontSize = 16.sp)
@@ -474,77 +472,121 @@ fun MindmapDiagramView(data: MindmapData) {
                             text = data.rootTitle,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
-                            fontSize = 15.sp
+                            fontSize = 16.sp
                         )
                     }
                 }
+
+                // Vertical connector line dropping straight from root center
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .height(20.dp)
+                        .background(Color(0xFF38BDF8))
+                )
             }
         }
 
-        // Branch Nodes
+        // 2. Connected Left Spine & Branch Cards
         itemsIndexed(data.branches) { index, branch ->
             val branchColor = branchColors[index % branchColors.size]
+            val isLast = index == data.branches.lastIndex
 
-            Row(modifier = Modifier.fillMaxWidth()) {
-                // Vertical connecting indicator line
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(28.dp).padding(top = 8.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+            ) {
+                // Left Spine Column with joint node and horizontal connector
+                Box(
+                    modifier = Modifier
+                        .width(44.dp)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.TopCenter
                 ) {
+                    // Vertical stem: ends cleanly at the dot for the last item, otherwise extends full height
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(branchColor)
+                            .width(3.dp)
+                            .then(
+                                if (isLast) Modifier.height(27.dp)
+                                else Modifier.fillMaxHeight()
+                            )
+                            .background(Color(0xFF38BDF8))
                     )
-                    Box(
+
+                    // Joint indicator and horizontal branch connector
+                    Row(
                         modifier = Modifier
-                            .width(2.dp)
-                            .height(60.dp)
-                            .background(branchColor.copy(alpha = 0.4f))
-                    )
+                            .fillMaxWidth()
+                            .padding(top = 22.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Spacer(modifier = Modifier.width(20.5.dp))
+
+                        // Colored Joint Dot
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(branchColor)
+                        )
+
+                        // Horizontal line connecting to the card
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(3.dp)
+                                .background(branchColor)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
-
+                // Branch Content Card
                 Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = branchColor.copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = branchColor.copy(alpha = 0.12f)
+                    ),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, branchColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .weight(1f)
+                        .padding(bottom = 14.dp)
+                        .border(1.dp, branchColor.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        // Branch Title Row
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(6.dp)
+                                    .size(8.dp)
                                     .clip(CircleShape)
                                     .background(branchColor)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = branch.title,
                                 fontWeight = FontWeight.Bold,
                                 color = branchColor,
-                                fontSize = 14.sp
+                                fontSize = 15.sp
                             )
                         }
 
+                        // Branch Sub-items Pills
                         if (branch.subItems.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 branch.subItems.forEach { sub ->
                                     Surface(
-                                        color = Color(0xFF0B0F19).copy(alpha = 0.7f),
-                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFF090E17).copy(alpha = 0.85f),
+                                        shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
                                             text = "• $sub",
                                             color = Color(0xFFE2E8F0),
-                                            fontSize = 12.sp,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                                         )
                                     }
                                 }
