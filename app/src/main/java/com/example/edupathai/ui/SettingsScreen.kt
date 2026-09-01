@@ -42,12 +42,8 @@ fun SettingsScreen(
 
     var profile by remember { mutableStateOf<ProfileModel?>(null) }
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
-    var showLearningStyleDialog by rememberSaveable { mutableStateOf(false) }
     var editUsername by rememberSaveable { mutableStateOf("") }
     var editBio by rememberSaveable { mutableStateOf("") }
-    var selectedLearningStyle by rememberSaveable { mutableStateOf("Visual") }
-
-    val learningStyles = listOf("Visual", "Auditory", "Reading/Writing", "Kinesthetic")
 
     fun loadProfile() {
         coroutineScope.launch {
@@ -64,13 +60,11 @@ fun SettingsScreen(
             val user = fetched ?: ProfileModel(
                 id = currentUserId,
                 username = SupabaseProvider.client.auth.currentUserOrNull()?.email?.substringBefore("@") ?: "Student",
-                email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: "student@university.edu",
-                learningStyle = "Visual"
+                email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: "student@university.edu"
             )
             profile = user
             editUsername = user.username
             editBio = user.bio ?: ""
-            selectedLearningStyle = user.learningStyle
         }
     }
 
@@ -100,7 +94,6 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
-            // Profile Card
             item {
                 Card(
                     shape = RoundedCornerShape(18.dp),
@@ -140,17 +133,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Learning Style Setting Item
-            item {
-                SettingsActionCard(
-                    icon = Icons.Default.Psychology,
-                    title = "Learning Style",
-                    value = profile?.learningStyle ?: "Visual",
-                    onClick = { showLearningStyleDialog = true }
-                )
-            }
-
-            // About App Card
             item {
                 SettingsActionCard(
                     icon = Icons.Default.Info,
@@ -160,7 +142,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Sign Out Card
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -184,7 +165,6 @@ fun SettingsScreen(
             }
         }
 
-        // Edit Profile Dialog
         if (showEditProfileDialog) {
             AlertDialog(
                 onDismissRequest = { showEditProfileDialog = false },
@@ -220,8 +200,7 @@ fun SettingsScreen(
                                         id = currentUserId,
                                         username = editUsername.trim(),
                                         email = profile?.email ?: "",
-                                        bio = editBio.trim(),
-                                        learningStyle = profile?.learningStyle ?: "Visual"
+                                        bio = editBio.trim()
                                     )
                                     withContext(Dispatchers.IO) {
                                         SupabaseProvider.client.from("profiles").upsert(updated)
@@ -241,74 +220,6 @@ fun SettingsScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showEditProfileDialog = false }) {
-                        Text("Cancel", color = Color(0xFF94A3B8))
-                    }
-                }
-            )
-        }
-
-        // Learning Style Selection Dialog
-        if (showLearningStyleDialog) {
-            AlertDialog(
-                onDismissRequest = { showLearningStyleDialog = false },
-                containerColor = Color(0xFF131C2E),
-                title = { Text("Select Learning Style", fontWeight = FontWeight.Bold, color = Color.White) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        learningStyles.forEach { style ->
-                            val isSelected = selectedLearningStyle == style
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) Color(0xFF3B82F6).copy(alpha = 0.2f) else Color(0xFF0F172A),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF3B82F6) else Color(0xFF1E293B)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { selectedLearningStyle = style }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(text = style, style = MaterialTheme.typography.bodyMedium, color = Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
-                                    if (isSelected) {
-                                        Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                try {
-                                    val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
-                                    val updated = profile?.copy(learningStyle = selectedLearningStyle) ?: ProfileModel(
-                                        id = currentUserId,
-                                        username = profile?.username ?: "Student",
-                                        email = profile?.email ?: "",
-                                        learningStyle = selectedLearningStyle
-                                    )
-                                    withContext(Dispatchers.IO) {
-                                        SupabaseProvider.client.from("profiles").upsert(updated)
-                                    }
-                                    profile = updated
-                                    showLearningStyleDialog = false
-                                    Toast.makeText(context, "Learning style updated!", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
-                    ) {
-                        Text("Apply", fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showLearningStyleDialog = false }) {
                         Text("Cancel", color = Color(0xFF94A3B8))
                     }
                 }

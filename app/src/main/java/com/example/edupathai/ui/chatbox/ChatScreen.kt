@@ -1,7 +1,14 @@
 package com.example.edupathai.ui.chatbox
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +37,7 @@ import com.example.edupathai.data.ChatMessage
 import com.example.edupathai.data.NoteFolder
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,9 +52,35 @@ fun ChatScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
+    var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
+    DisposableEffect(context) {
+        val tts = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech?.language = Locale.getDefault()
+            }
+        }
+        textToSpeech = tts
+        onDispose {
+            tts.stop()
+            tts.shutdown()
+        }
+    }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data
+            val spokenText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                viewModel.updateUserInput(spokenText)
+            }
+        }
+    }
+
     LaunchedEffect(initialSessionId) {
         if (!initialSessionId.isNullOrBlank() && initialSessionId != uiState.currentSessionId) {
-            viewModel.loadSession(initialSessionId, initialSessionTitle ?: "AI Study Assistant")
+            viewModel.selectSession(initialSessionId, initialSessionTitle ?: "AI Study Assistant")
         }
     }
 
@@ -57,10 +91,10 @@ fun ChatScreen(
     var showScheduleDialog by rememberSaveable { mutableStateOf(false) }
     var suggestedTaskTitle by rememberSaveable { mutableStateOf("") }
 
-    LaunchedEffect(uiState.actionFeedbackMessage) {
-        uiState.actionFeedbackMessage?.let {
+    LaunchedEffect(uiState.notificationMessage) {
+        uiState.notificationMessage?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            viewModel.clearFeedbackMessage()
+            viewModel.clearNotification()
         }
     }
 
@@ -70,169 +104,223 @@ fun ChatScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .imePadding()
-    ) {
-        TopAppBar(
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            title = {
-                Column {
-                    Text(
-                        text = uiState.currentSessionTitle.ifBlank { "AI Study Assistant" },
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = "Ask questions, generate study notes & plans",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            navigationIcon = {
-                if (onNavigateBack != null) {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    Scaffold(
+        containerColor = Color(0xFF0B0F19),
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF131C2E)),
+                title = {
+                    Column {
+                        Text(
+                            text = uiState.currentSessionTitle.ifBlank { "AI Study Assistant" },
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "Ask questions, voice chat, study plans",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                },
+                navigationIcon = {
+                    if (onNavigateBack != null) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.createNewSession() }) {
+                        Icon(Icons.Default.AddComment, contentDescription = "New Session", tint = Color(0xFF38BDF8))
+                    }
+                    IconButton(onClick = onNavigateToHistory) {
+                        Icon(Icons.Default.History, contentDescription = "History", tint = Color(0xFF94A3B8))
                     }
                 }
-            },
-            actions = {
-                IconButton(onClick = { viewModel.startNewSession() }) {
-                    Icon(
-                        imageVector = Icons.Default.AddComment,
-                        contentDescription = "New Session",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                IconButton(onClick = onNavigateToHistory) {
-                    Icon(
-                        imageVector = Icons.Default.History,
-                        contentDescription = "History",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        )
-
-        LazyColumn(
-            state = listState,
+            )
+        }
+    ) { paddingValues ->
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(vertical = 12.dp)
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(Color(0xFF0B0F19))
+                .imePadding()
         ) {
-            if (uiState.messages.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 40.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                if (uiState.messages.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 40.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(48.dp)
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    text = "How can I help your studies today?",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Type or use voice input to explain concepts, plan studies, or review.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(uiState.messages) { message ->
+                    ChatMessageBubble(
+                        message = message,
+                        onSpeakText = { text ->
+                            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+                        },
+                        onSaveToNote = { content ->
+                            selectedNoteContent = content
+                            selectedNoteTitle = "AI Note: " + content.take(24).replace("\n", " ").trim() + "..."
+                            viewModel.loadFolders()
+                            showSaveNoteDialog = true
+                        },
+                        onSchedulePlan = { content ->
+                            suggestedTaskTitle = "Study: " + content.take(30).replace("\n", " ").trim()
+                            showScheduleDialog = true
+                        }
+                    )
+                }
+
+                if (uiState.isLoading) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF38BDF8), strokeWidth = 2.dp)
                             Text(
-                                text = "How can I help your studies today?",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Ask to explain concepts, solve problems, or plan study blocks.",
+                                text = "AI is thinking...",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color(0xFF94A3B8)
                             )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Button(
+                                onClick = { viewModel.stopThinking() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.2f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Icon(Icons.Default.Stop, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Stop Thinking", color = Color(0xFFEF4444), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
             }
 
-            items(uiState.messages) { message ->
-                ChatMessageBubble(
-                    message = message,
-                    onSaveToNote = { content ->
-                        selectedNoteContent = content
-                        selectedNoteTitle = "AI Note: " + content.take(24).replace("\n", " ").trim() + "..."
-                        viewModel.loadAvailableFolders()
-                        showSaveNoteDialog = true
-                    },
-                    onSchedulePlan = { content ->
-                        suggestedTaskTitle = "Study: " + content.take(30).replace("\n", " ").trim()
-                        showScheduleDialog = true
-                    }
-                )
-            }
-
-            if (uiState.isLoading) {
-                item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text(
-                            text = "AI is thinking...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        Surface(
-            tonalElevation = 3.dp,
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
+            // Floating, compact, non-edge-attached Input Bar
+            Surface(
+                color = Color(0xFF131C2E),
+                shape = RoundedCornerShape(28.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
+                shadowElevation = 6.dp,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp, top = 6.dp)
             ) {
-                OutlinedTextField(
-                    value = uiState.inputText,
-                    onValueChange = { viewModel.updateInputText(it) },
-                    placeholder = { Text("Ask a question or request a study plan...") },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 3,
-                    shape = RoundedCornerShape(24.dp)
-                )
-
-                IconButton(
-                    onClick = { viewModel.sendMessage() },
-                    enabled = uiState.inputText.isNotBlank() && !uiState.isLoading,
+                Row(
                     modifier = Modifier
-                        .size(46.dp)
-                        .background(
-                            color = if (uiState.inputText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            shape = CircleShape
-                        )
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = if (uiState.inputText.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    OutlinedTextField(
+                        value = uiState.userInput,
+                        onValueChange = { viewModel.updateUserInput(it) },
+                        placeholder = { Text("Ask a question or request a study plan...", color = Color(0xFF64748B), style = MaterialTheme.typography.bodyMedium) },
+                        modifier = Modifier.weight(1f),
+                        maxLines = 3,
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your study query...")
+                                        }
+                                        speechLauncher.launch(intent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "Voice input not supported on this device", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.Default.Mic, contentDescription = "Voice Input", tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(20.dp)
                     )
+
+                    if (uiState.isLoading) {
+                        IconButton(
+                            onClick = { viewModel.stopThinking() },
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(color = Color(0xFFEF4444), shape = CircleShape)
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    } else {
+                        IconButton(
+                            onClick = { viewModel.sendMessage() },
+                            enabled = uiState.userInput.isNotBlank(),
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(
+                                    color = if (uiState.userInput.isNotBlank()) Color(0xFF3B82F6) else Color(0xFF1E293B),
+                                    shape = CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = if (uiState.userInput.isNotBlank()) Color.White else Color(0xFF64748B),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -243,23 +331,24 @@ fun ChatScreen(
             initialTitle = selectedNoteTitle,
             initialContent = selectedNoteContent,
             availableFolders = uiState.availableFolders,
-            isSaving = uiState.isSavingNote,
+            isSaving = uiState.isLoading,
             onDismiss = { showSaveNoteDialog = false },
             onSave = { folderId, title, content ->
-                viewModel.saveAiResponseToNotes(
+                viewModel.saveMessageToNote(
+                    messageText = content,
                     folderId = folderId,
-                    noteTitle = title,
-                    noteContent = content,
-                    onSuccess = { showSaveNoteDialog = false }
+                    noteTitle = title
                 )
+                showSaveNoteDialog = false
             },
             onCreateFolderAndSave = { folderName, title, content ->
                 viewModel.createFolderAndSaveNote(
+                    messageText = content,
                     folderName = folderName,
-                    noteTitle = title,
-                    noteContent = content,
-                    onSuccess = { showSaveNoteDialog = false }
+                    colorHex = "#3B82F6",
+                    noteTitle = title
                 )
+                showSaveNoteDialog = false
             }
         )
     }
@@ -267,18 +356,17 @@ fun ChatScreen(
     if (showScheduleDialog) {
         ConfirmSchedulePlanDialog(
             initialTitle = suggestedTaskTitle,
-            isSaving = uiState.isSchedulingTask,
+            isSaving = uiState.isLoading,
             onDismiss = { showScheduleDialog = false },
-            onConfirm = { title, start, end, energy, type, colorHex ->
-                viewModel.scheduleTimelineTask(
+            onConfirm = { title, start, end, energy, _, colorHex ->
+                viewModel.scheduleStudySession(
                     title = title,
                     startTime = start,
                     endTime = end,
                     energyLevel = energy,
-                    taskType = type,
-                    colorHex = colorHex,
-                    onSuccess = { showScheduleDialog = false }
+                    colorHex = colorHex
                 )
+                showScheduleDialog = false
             }
         )
     }
@@ -287,12 +375,14 @@ fun ChatScreen(
 @Composable
 fun ChatMessageBubble(
     message: ChatMessage,
+    onSpeakText: (String) -> Unit,
     onSaveToNote: (String) -> Unit,
     onSchedulePlan: (String) -> Unit
 ) {
     val isUser = message.sender.equals("user", ignoreCase = true)
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val messageText = message.message.ifBlank { message.content }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -305,13 +395,14 @@ fun ChatMessageBubble(
                 bottomStart = if (isUser) 16.dp else 4.dp,
                 bottomEnd = if (isUser) 4.dp else 16.dp
             ),
-            color = if (isUser) MaterialTheme.colorScheme.primary else Color(0xFF1E293B),
+            color = if (isUser) Color(0xFF3B82F6) else Color(0xFF131C2E),
+            border = if (!isUser) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)) else null,
             modifier = Modifier.widthIn(max = 420.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = message.text,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else Color.White,
+                    text = messageText,
+                    color = Color.White,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -324,28 +415,42 @@ fun ChatMessageBubble(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AssistChip(
-                    onClick = { onSchedulePlan(message.text) },
-                    label = { Text("Schedule", style = MaterialTheme.typography.labelSmall) },
+                    onClick = { onSpeakText(messageText) },
+                    label = { Text("Listen", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA855F7)) },
                     leadingIcon = {
                         Icon(
-                            imageVector = Icons.Default.CalendarMonth,
-                            contentDescription = null,
+                            imageVector = Icons.Default.VolumeUp,
+                            contentDescription = "Read aloud",
                             modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = Color(0xFFA855F7)
                         )
                     },
                     modifier = Modifier.height(28.dp)
                 )
 
                 AssistChip(
-                    onClick = { onSaveToNote(message.text) },
-                    label = { Text("Save Note", style = MaterialTheme.typography.labelSmall) },
+                    onClick = { onSchedulePlan(messageText) },
+                    label = { Text("Schedule", style = MaterialTheme.typography.labelSmall, color = Color(0xFF38BDF8)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = Color(0xFF38BDF8)
+                        )
+                    },
+                    modifier = Modifier.height(28.dp)
+                )
+
+                AssistChip(
+                    onClick = { onSaveToNote(messageText) },
+                    label = { Text("Save Note", style = MaterialTheme.typography.labelSmall, color = Color(0xFF10B981)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.BookmarkAdd,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = Color(0xFF10B981)
                         )
                     },
                     modifier = Modifier.height(28.dp)
@@ -353,15 +458,16 @@ fun ChatMessageBubble(
 
                 AssistChip(
                     onClick = {
-                        clipboardManager.setText(AnnotatedString(message.text))
+                        clipboardManager.setText(AnnotatedString(messageText))
                         Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
                     },
-                    label = { Text("Copy", style = MaterialTheme.typography.labelSmall) },
+                    label = { Text("Copy", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = null,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(14.dp),
+                            tint = Color(0xFF94A3B8)
                         )
                     },
                     modifier = Modifier.height(28.dp)
@@ -397,15 +503,16 @@ fun ConfirmSchedulePlanDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color(0xFF131C2E),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.EventAvailable,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = Color(0xFF38BDF8)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Confirm Schedule Task", fontWeight = FontWeight.Bold)
+                Text("Confirm Schedule Task", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         text = {
@@ -416,7 +523,7 @@ fun ConfirmSchedulePlanDialog(
                 Text(
                     text = "Review and customize the timeline details before creating:",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color(0xFF94A3B8)
                 )
 
                 OutlinedTextField(
@@ -449,7 +556,7 @@ fun ConfirmSchedulePlanDialog(
                     )
                 }
 
-                Text("Energy Required", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Text("Energy Required", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -463,7 +570,7 @@ fun ConfirmSchedulePlanDialog(
                     }
                 }
 
-                Text("Task Type", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Text("Task Type", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -477,7 +584,7 @@ fun ConfirmSchedulePlanDialog(
                     }
                 }
 
-                Text("Color Tag", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Text("Color Tag", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -486,7 +593,7 @@ fun ConfirmSchedulePlanDialog(
                         val parsedColor = try {
                             Color(android.graphics.Color.parseColor(hex))
                         } catch (_: Exception) {
-                            MaterialTheme.colorScheme.primary
+                            Color(0xFF3B82F6)
                         }
                         Box(
                             modifier = Modifier
@@ -515,18 +622,19 @@ fun ConfirmSchedulePlanDialog(
                 onClick = {
                     onConfirm(taskTitle, startTime, endTime, selectedEnergy, selectedType, selectedColor)
                 },
-                enabled = !isSaving && taskTitle.isNotBlank() && startTime.isNotBlank() && endTime.isNotBlank()
+                enabled = !isSaving && taskTitle.isNotBlank() && startTime.isNotBlank() && endTime.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
             ) {
                 if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                 } else {
-                    Text("Confirm & Add")
+                    Text("Confirm & Add", fontWeight = FontWeight.Bold)
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !isSaving) {
-                Text("Cancel")
+                Text("Cancel", color = Color(0xFF94A3B8))
             }
         }
     )
@@ -556,15 +664,16 @@ fun SaveAiToNotesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color(0xFF131C2E),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.BookmarkAdd,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = Color(0xFF38BDF8)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Save to Notebook", fontWeight = FontWeight.Bold)
+                Text("Save to Notebook", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         text = {
@@ -590,12 +699,13 @@ fun SaveAiToNotesDialog(
                         )
                         ExposedDropdownMenu(
                             expanded = dropdownExpanded,
-                            onDismissRequest = { dropdownExpanded = false }
+                            onDismissRequest = { dropdownExpanded = false },
+                            modifier = Modifier.background(Color(0xFF131C2E))
                         ) {
                             availableFolders.forEach { folder ->
                                 val fId = folder.id
                                 DropdownMenuItem(
-                                    text = { Text(folder.name) },
+                                    text = { Text(folder.name, color = Color.White) },
                                     onClick = {
                                         selectedFolderId = fId
                                         dropdownExpanded = false
@@ -609,9 +719,9 @@ fun SaveAiToNotesDialog(
                         onClick = { isCreatingNewFolder = true },
                         modifier = Modifier.align(Alignment.End)
                     ) {
-                        Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("+ Create New Folder", style = MaterialTheme.typography.labelSmall)
+                        Text("+ Create New Folder", style = MaterialTheme.typography.labelSmall, color = Color(0xFF38BDF8))
                     }
                 } else {
                     OutlinedTextField(
@@ -628,7 +738,7 @@ fun SaveAiToNotesDialog(
                             onClick = { isCreatingNewFolder = false },
                             modifier = Modifier.align(Alignment.End)
                         ) {
-                            Text("Choose Existing Folder", style = MaterialTheme.typography.labelSmall)
+                            Text("Choose Existing Folder", style = MaterialTheme.typography.labelSmall, color = Color(0xFF38BDF8))
                         }
                     }
                 }
@@ -663,18 +773,19 @@ fun SaveAiToNotesDialog(
                 enabled = !isSaving && title.isNotBlank() && (
                         (!isCreatingNewFolder && selectedFolderId.isNotBlank()) ||
                                 (isCreatingNewFolder && newFolderName.isNotBlank())
-                        )
+                        ),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
             ) {
                 if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                 } else {
-                    Text("Save Note")
+                    Text("Save Note", fontWeight = FontWeight.Bold)
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !isSaving) {
-                Text("Cancel")
+                Text("Cancel", color = Color(0xFF94A3B8))
             }
         }
     )

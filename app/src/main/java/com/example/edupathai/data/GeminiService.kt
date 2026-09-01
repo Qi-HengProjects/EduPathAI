@@ -1,54 +1,63 @@
 package com.example.edupathai.data
 
-import android.util.Log
 import com.example.edupathai.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.util.concurrent.atomic.AtomicInteger
 
 object GeminiService {
-    private const val TAG = "GeminiService"
-
-    private val jsonParser = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        coerceInputValues = true
-    }
-
-    // Parse comma-separated keys from BuildConfig
     private val apiKeys: List<String> by lazy {
-        BuildConfig.GEMINI_API_KEYS
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
+        val multiKeys = BuildConfig.GEMINI_API_KEYS
+        if (multiKeys.isNotBlank()) {
+            multiKeys.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        } else {
+            val singleKey = BuildConfig.GEMINI_API_KEY
+            if (singleKey.isNotBlank()) listOf(singleKey) else emptyList()
+        }
     }
 
     private val currentKeyIndex = AtomicInteger(0)
-
-    fun sanitizeText(text: String): String {
-        return text
-            .replace("**", "")
-            .replace("*", "")
-            .replace("### ", "")
-            .replace("## ", "")
-            .replace("# ", "")
-            .replace("```json", "")
-            .replace("```", "")
-            .trim()
-    }
+    private val jsonParser = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /**
-     * Executes AI calls with automatic multi-key fallback rotation.
-     * If the active key runs out of quota, it rotates to the next available key.
+     * Strips all markdown symbols (**, ##, ---, *, _, `) and normalizes output into clean plain text.
      */
+    fun cleanPlainText(raw: String): String {
+        var text = raw
+        // Remove code block markers
+        text = text.replace("```[a-zA-Z]*".toRegex(), "").replace("```", "")
+        // Remove bold and italic markers (***, **, *, ___, __, _)
+        text = text.replace(Regex("\\*\\*\\*(.*?)\\*\\*\\*"), "$1")
+        text = text.replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+        text = text.replace(Regex("(?<!\\*)\\*(?!\\*)(.*?)(?<!\\*)\\*(?!\\*)"), "$1")
+        text = text.replace(Regex("___(.*?)___"), "$1")
+        text = text.replace(Regex("__(.*?)__"), "$1")
+        text = text.replace(Regex("(?<!_)_(?!_)(.*?)(?<!_)_(?!_)"), "$1")
+        // Remove markdown headers (# Title -> Title)
+        text = text.replace(Regex("(?m)^#{1,6}\\s*"), "")
+        // Remove horizontal lines (---, ***, ___)
+        text = text.replace(Regex("(?m)^[-*_]{3,}\\s*$"), "")
+        // Convert markdown asterisks/hyphen bullets to clean standard bullet dots
+        text = text.replace(Regex("(?m)^[ \\t]*[*\\-+]\\s+"), "• ")
+        // Remove blockquotes (> Quote -> Quote)
+        text = text.replace(Regex("(?m)^>\\s*"), "")
+        // Remove inline code ticks `code` -> code
+        text = text.replace(Regex("`([^`]+)`"), "$1")
+        // Remove markdown links [title](url) -> title
+        text = text.replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
+        // Remove excessive empty lines
+        text = text.replace(Regex("\n{3,}"), "\n\n")
+        return text.trim()
+    }
+
     private suspend fun <T> executeWithFallback(
         operationName: String,
         action: suspend (GenerativeModel) -> T
     ): T? = withContext(Dispatchers.IO) {
         if (apiKeys.isEmpty()) {
-            Log.e(TAG, "No Gemini API keys found in local.properties.")
             return@withContext null
         }
 
@@ -65,143 +74,164 @@ object GeminiService {
                     apiKey = activeKey
                 )
                 return@withContext action(model)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 attempts++
-                Log.w(
-                    TAG,
-                    "API Key #$keyIndex failed during $operationName: ${e.message}. Rotating to next key..."
-                )
                 currentKeyIndex.incrementAndGet()
             }
         }
-
-        Log.e(TAG, "All $totalKeys Gemini API keys exhausted for $operationName.")
         null
     }
 
-    suspend fun sendChatMessage(userPrompt: String): String {
-        val result = executeWithFallback("sendChatMessage") { model ->
-            val response = model.generateContent(
-                """
-                You are EduPath AI, an encouraging and clear academic study assistant.
-                Answer the student's question directly, clearly, and concisely.
-                
-                RULES:
-                - Do NOT use markdown symbols like asterisks (** or *) or hashtags (#).
-                - Use clean bullet points (• ) when listing items.
-                - Keep explanations structured and easy to read.
-                
-                Student Question:
-                $userPrompt
-                """.trimIndent()
-            )
-            sanitizeText(response.text ?: "Sorry, I couldn't formulate a response. Please try again.")
-        }
-        return result ?: "AI service is currently unavailable. All API keys reached quota limits."
+    suspend fun generateResponse(prompt: String): String {
+        val plainTextInstruction = "Respond in clear, natural plain text. Do NOT use markdown syntax (no asterisks, no hashes, no bold tags, no horizontal lines).\n\n"
+        val raw = executeWithFallback("generateResponse") { model ->
+            val response = model.generateContent(plainTextInstruction + prompt)
+            response.text ?: "No response generated."
+        } ?: "Error: All Gemini API keys failed or are missing."
+
+        return cleanPlainText(raw)
     }
 
-    suspend fun generateSessionTitle(prompt: String): String {
-        val result = executeWithFallback("generateSessionTitle") { model ->
-            val response = model.generateContent(
-                """
-                Generate a short 2 to 4 word title summarising this study topic:
-                "$prompt"
-                
-                RULES:
-                - Return ONLY the title text.
-                - No quotes, no markdown, no punctuation.
-                """.trimIndent()
-            )
-            val generated = sanitizeText(response.text ?: "")
-            if (generated.isNotBlank()) generated.take(30) else prompt.take(26).trim()
-        }
-        return result ?: prompt.take(26).trim()
+    suspend fun generateSessionTitle(firstUserMessage: String): String {
+        val prompt = "Generate a short 3-5 word title summarizing this academic study query: \"$firstUserMessage\". Return ONLY the plain text title without quotes, periods, or markdown."
+        val result = generateResponse(prompt).trim().removeSurrounding("\"").removeSurrounding("'")
+        return if (result.isBlank() || result.startsWith("Error:")) "Study Session" else cleanPlainText(result)
     }
+
+    suspend fun sendChatMessage(history: List<ChatMessage>, userMessage: String): String {
+        val systemPrompt = "You are EduPath AI, an intelligent student study assistant. Answer clearly and concisely in plain text with 0 markdown symbols (never use ** for bold, never use ### for headings, never use --- for lines, use simple • bullet dots if making lists)."
+
+        val raw = executeWithFallback("sendChatMessage") { model ->
+            val chatHistory = mutableListOf<com.google.ai.client.generativeai.type.Content>()
+            chatHistory.add(content(role = "user") { text(systemPrompt) })
+            chatHistory.add(content(role = "model") { text("Understood. I will provide clear, well-structured plain text explanations without any markdown formatting symbols.") })
+
+            history.forEach { msg ->
+                chatHistory.add(
+                    content(role = if (msg.sender == "user") "user" else "model") {
+                        text(msg.message)
+                    }
+                )
+            }
+            val chat = model.startChat(history = chatHistory)
+            val response = chat.sendMessage(userMessage)
+            response.text ?: "No response generated."
+        } ?: generateResponse(userMessage)
+
+        return cleanPlainText(raw)
+    }
+
+    suspend fun sendChatMessage(userMessage: String): String = sendChatMessage(emptyList(), userMessage)
 
     suspend fun simplifyNote(content: String): String {
-        val result = executeWithFallback("simplifyNote") { model ->
-            val response = model.generateContent(
-                """
-                Simplify and explain the following study notes into high-impact key takeaways.
-                RULES:
-                - Do NOT use markdown asterisks (**) or hashtags (#).
-                - Use clear bullet points (• ) for key points.
-                
-                Content:
-                $content
-                """.trimIndent()
-            )
-            sanitizeText(response.text ?: "Could not simplify content.")
-        }
-        return result ?: "Unable to simplify note. Please try again later."
+        val prompt = "Extract and explain the key study points and core takeaways from these notes in clean plain text without markdown symbols:\n\n$content"
+        return generateResponse(prompt)
     }
 
     suspend fun generateFlashcards(content: String): List<Flashcard> {
-        val result = executeWithFallback("generateFlashcards") { model ->
-            val prompt = """
-                Generate 4 study flashcards from the text below.
-                Return ONLY a valid JSON array of objects with keys "question" and "answer".
-                Do not include markdown tags.
-                Text:
-                $content
-            """.trimIndent()
+        val prompt = """
+            Based on the following notes, generate 4-6 high-yield study flashcards.
+            Respond ONLY with a valid JSON array of objects with keys "question" and "answer". Do not use any markdown formatting or markdown backticks in the text values.
+            Notes: $content
+        """.trimIndent()
 
-            val response = model.generateContent(prompt)
-            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "[]"
-            jsonParser.decodeFromString<List<Flashcard>>(raw)
+        val rawText = executeWithFallback("generateFlashcards") { model ->
+            model.generateContent(prompt).text ?: ""
+        } ?: ""
+
+        return try {
+            val cleaned = rawText.substringAfter("```json").substringBefore("```").trim()
+            val list = jsonParser.decodeFromString<List<Flashcard>>(cleaned)
+            list.map { it.copy(question = cleanPlainText(it.question), answer = cleanPlainText(it.answer)) }
+        } catch (_: Exception) {
+            try {
+                val list = jsonParser.decodeFromString<List<Flashcard>>(rawText.trim())
+                list.map { it.copy(question = cleanPlainText(it.question), answer = cleanPlainText(it.answer)) }
+            } catch (_: Exception) {
+                emptyList()
+            }
         }
-        return result ?: listOf(Flashcard(question = "Core Concept", answer = content.take(120)))
     }
 
     suspend fun generateMindmap(content: String): MindmapData {
-        val result = executeWithFallback("generateMindmap") { model ->
-            val prompt = """
-                Convert the following notes into a structured mindmap hierarchy.
-                Return ONLY a valid JSON object matching this exact schema:
-                {
-                  "rootTitle": "Main Subject Title",
-                  "branches": [
-                    {
-                      "title": "Branch Name",
-                      "subItems": ["Detail 1", "Detail 2"]
-                    }
-                  ]
-                }
-                Text:
-                $content
-            """.trimIndent()
+        val prompt = """
+            Based on the following notes, generate a structured mindmap hierarchy.
+            Respond ONLY with a valid JSON object with keys "rootTitle" (string) and "branches" (array of objects with "title" string and "subItems" array of strings).
+            Notes: $content
+        """.trimIndent()
 
-            val response = model.generateContent(prompt)
-            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
-            jsonParser.decodeFromString<MindmapData>(raw)
+        val rawText = executeWithFallback("generateMindmap") { model ->
+            model.generateContent(prompt).text ?: ""
+        } ?: ""
+
+        return try {
+            val cleaned = rawText.substringAfter("```json").substringBefore("```").trim()
+            val data = jsonParser.decodeFromString<MindmapData>(cleaned)
+            MindmapData(
+                rootTitle = cleanPlainText(data.rootTitle),
+                branches = data.branches.map { b ->
+                    MindmapBranch(
+                        title = cleanPlainText(b.title),
+                        subItems = b.subItems.map { cleanPlainText(it) }
+                    )
+                }
+            )
+        } catch (_: Exception) {
+            try {
+                val data = jsonParser.decodeFromString<MindmapData>(rawText.trim())
+                MindmapData(
+                    rootTitle = cleanPlainText(data.rootTitle),
+                    branches = data.branches.map { b ->
+                        MindmapBranch(
+                            title = cleanPlainText(b.title),
+                            subItems = b.subItems.map { cleanPlainText(it) }
+                        )
+                    }
+                )
+            } catch (_: Exception) {
+                MindmapData("Core Concept", listOf(MindmapBranch("Overview", listOf("Study notes processed"))))
+            }
         }
-        return result ?: MindmapData(
-            rootTitle = "Study Notes",
-            branches = listOf(MindmapBranch(title = "Overview", subItems = listOf(content.take(80))))
-        )
     }
 
     suspend fun generateQuiz(content: String): List<QuizQuestion> {
-        val result = executeWithFallback("generateQuiz") { model ->
-            val prompt = """
-                Create 4 multiple-choice quiz questions based on the text below.
-                Return ONLY a valid JSON array of objects with this exact structure:
-                [
-                  {
-                    "question": "Question text here?",
-                    "options": ["Option A", "Option B", "Option C", "Option D"],
-                    "correctAnswer": "Option A",
-                    "explanation": "Why this option is correct."
-                  }
-                ]
-                Text:
-                $content
-            """.trimIndent()
+        val prompt = """
+            Based on the following notes, generate 3 multiple-choice quiz questions.
+            Respond ONLY with a valid JSON array of objects with keys "question", "options" (array of 4 strings), "correctAnswer" (exact string matching one option), and "explanation".
+            Notes: $content
+        """.trimIndent()
 
-            val response = model.generateContent(prompt)
-            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "[]"
-            jsonParser.decodeFromString<List<QuizQuestion>>(raw)
+        val rawText = executeWithFallback("generateQuiz") { model ->
+            model.generateContent(prompt).text ?: ""
+        } ?: ""
+
+        return try {
+            val cleaned = rawText.substringAfter("```json").substringBefore("```").trim()
+            val list = jsonParser.decodeFromString<List<QuizQuestion>>(cleaned)
+            list.map { q ->
+                QuizQuestion(
+                    question = cleanPlainText(q.question),
+                    options = q.options.map { cleanPlainText(it) },
+                    correctAnswer = cleanPlainText(q.correctAnswer),
+                    explanation = cleanPlainText(q.explanation)
+                )
+            }
+        } catch (_: Exception) {
+            try {
+                val list = jsonParser.decodeFromString<List<QuizQuestion>>(rawText.trim())
+                list.map { q ->
+                    QuizQuestion(
+                        question = cleanPlainText(q.question),
+                        options = q.options.map { cleanPlainText(it) },
+                        correctAnswer = cleanPlainText(q.correctAnswer),
+                        explanation = cleanPlainText(q.explanation)
+                    )
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
         }
-        return result ?: emptyList()
     }
 }

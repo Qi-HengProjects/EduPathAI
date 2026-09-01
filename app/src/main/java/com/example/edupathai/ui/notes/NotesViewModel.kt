@@ -11,60 +11,47 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class NotesUiState(
-    val isLoading: Boolean = false,
     val folders: List<NoteFolder> = emptyList(),
-    val searchQuery: String = "",
+    val isLoading: Boolean = false,
     val errorMessage: String? = null
 )
 
 class NotesViewModel(
-    private val repository: NoteRepository = NoteRepository()
+    private val noteRepository: NoteRepository = NoteRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NotesUiState())
     val uiState: StateFlow<NotesUiState> = _uiState.asStateFlow()
 
     init {
-        // Automatically fetch folders when ViewModel is first created
         loadFolders()
     }
 
     fun loadFolders() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
-                val fetchedFolders = repository.getFolders()
-                _uiState.update {
-                    it.copy(isLoading = false, folders = fetchedFolders)
-                }
+                val list = noteRepository.getFolders()
+                _uiState.update { it.copy(folders = list, isLoading = false) }
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, errorMessage = e.message)
-                }
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
             }
         }
     }
 
-    fun createFolder(name: String, colorHex: String = "#3B82F6") {
+    fun createFolder(name: String, colorHex: String) {
         viewModelScope.launch {
-            try {
-                repository.addFolder(name, colorHex)
-                // Refresh list after adding
-                loadFolders()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+            val created = noteRepository.createFolder(name, colorHex)
+            if (created != null) {
+                _uiState.update { it.copy(folders = listOf(created) + it.folders) }
             }
         }
     }
 
-    fun deleteFolder(id: String) {
+    fun deleteFolder(folderId: String) {
         viewModelScope.launch {
-            try {
-                repository.deleteFolder(id)
-                loadFolders()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
-            }
+            noteRepository.deleteFolder(folderId)
+            _uiState.update { it.copy(folders = it.folders.filter { f -> f.id != folderId }) }
         }
     }
 }

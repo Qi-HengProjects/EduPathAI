@@ -2,6 +2,7 @@ package com.example.edupathai.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -29,7 +30,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun DashboardScreen(
     userId: String,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToNotes: () -> Unit,
+    onNavigateToSchedule: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var profile by remember { mutableStateOf<ProfileModel?>(null) }
@@ -52,8 +55,7 @@ fun DashboardScreen(
                 profile = fetched ?: ProfileModel(
                     id = currentUserId,
                     username = SupabaseProvider.client.auth.currentUserOrNull()?.email?.substringBefore("@") ?: "Student",
-                    email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: "student@university.edu",
-                    learningStyle = "Visual"
+                    email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: "student@university.edu"
                 )
             } finally {
                 isLoading = false
@@ -79,7 +81,7 @@ fun DashboardScreen(
                             color = Color.White
                         )
                         Text(
-                            text = "Overview & Learning Analytics",
+                            text = "Overview & Academic Suite",
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFF94A3B8)
                         )
@@ -133,7 +135,7 @@ fun DashboardScreen(
                 }
             }
 
-            // User Identity Card (Cleaned without the residual box)
+            // User Identity Card
             item {
                 Card(
                     shape = RoundedCornerShape(18.dp),
@@ -186,65 +188,7 @@ fun DashboardScreen(
                 }
             }
 
-            // Learning Style & Metrics Card
-            item {
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(18.dp))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Psychology,
-                                    contentDescription = null,
-                                    tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Learning Style Metrics",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFF3B82F6).copy(alpha = 0.2f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3B82F6))
-                            ) {
-                                Text(
-                                    text = profile?.learningStyle ?: "Visual",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF38BDF8),
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "AI study features like Mindmaps, Flashcards, and Quizzes are automatically optimized for your learning style.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF94A3B8)
-                        )
-                    }
-                }
-            }
-
-            // Quick Stats Grid
+            // Quick Navigation Action Cards (Notebooks & Timeline are now fully functional)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -255,14 +199,16 @@ fun DashboardScreen(
                         title = "Notebooks",
                         subtitle = "Active Subjects",
                         accent = Color(0xFF38BDF8),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        onClick = onNavigateToNotes
                     )
                     StatCardItem(
                         icon = Icons.Default.CalendarMonth,
                         title = "Timeline",
                         subtitle = "Daily Schedule",
                         accent = Color(0xFF10B981),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        onClick = onNavigateToSchedule
                     )
                 }
             }
@@ -276,12 +222,15 @@ fun StatCardItem(
     title: String,
     subtitle: String,
     accent: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
-        modifier = modifier.border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
+        modifier = modifier
+            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
+            .clickable { onClick() }
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

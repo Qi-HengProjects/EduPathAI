@@ -5,8 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ChatSession(
-    val id: String? = null,
-    @SerialName("user_id") val userId: String? = null,
+    val id: String = "",
+    @SerialName("user_id") val userId: String = "",
     val title: String = "New Conversation",
     @SerialName("is_pinned") val isPinned: Boolean = false,
     @SerialName("created_at") val createdAt: String? = null,
@@ -16,9 +16,12 @@ data class ChatSession(
 @Serializable
 data class ChatMessage(
     val id: String? = null,
-    @SerialName("session_id") val sessionId: String? = null,
-    @SerialName("user_id") val userId: String? = null,
-    val sender: String = "user", // "user" or "model"
-    val text: String = "",
+    @SerialName("session_id") val sessionId: String = "",
+    val sender: String = "user",
+    val message: String = "",
     @SerialName("created_at") val createdAt: String? = null
-)
+) {
+    val content: String get() = message
+    val text: String get() = message
+    val isUser: Boolean get() = sender == "user"
+}

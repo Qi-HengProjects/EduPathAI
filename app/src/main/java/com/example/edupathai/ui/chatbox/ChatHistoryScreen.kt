@@ -110,14 +110,14 @@ fun ChatHistoryScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
-                    items(filteredSessions, key = { it.id ?: it.title }) { session ->
+                    items(filteredSessions, key = { it.id }) { session ->
                         ChatSessionItem(
                             session = session,
                             onClick = {
                                 val sId = session.id ?: ""
                                 onSessionClick(sId, session.title)
                             },
-                            onDelete = { session.id?.let { viewModel.deleteSession(it) } },
+                            onDelete = { viewModel.deleteSession(session.id) },
                             onTogglePin = { viewModel.togglePin(session) }
                         )
                     }

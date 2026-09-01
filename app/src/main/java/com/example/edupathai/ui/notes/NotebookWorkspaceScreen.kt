@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.edupathai.data.AiIslandMode
 import com.example.edupathai.data.Flashcard
 import com.example.edupathai.data.MindmapData
 import com.example.edupathai.data.QuizQuestion
@@ -73,7 +76,7 @@ fun NotebookWorkspaceScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -153,7 +156,7 @@ fun NotebookWorkspaceScreen(
                 ) {
                     item {
                         AssistChip(
-                            onClick = { viewModel.simplifyNote() },
+                            onClick = { viewModel.generateSimplifiedNotes() },
                             label = { Text("Simplify") },
                             leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             colors = AssistChipDefaults.assistChipColors(
@@ -215,12 +218,9 @@ fun NotebookWorkspaceScreen(
                 // Title Input
                 item {
                     OutlinedTextField(
-                        value = uiState.currentNote?.title ?: "",
+                        value = uiState.noteTitle.ifBlank { uiState.currentNote?.title ?: "" },
                         onValueChange = { newTitle ->
-                            viewModel.updateCurrentNoteContent(
-                                title = newTitle,
-                                content = uiState.currentNote?.contentMarkdown ?: ""
-                            )
+                            viewModel.updateTitle(newTitle)
                         },
                         placeholder = { Text("Note Title...") },
                         textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -232,12 +232,9 @@ fun NotebookWorkspaceScreen(
                 // Markdown Editor
                 item {
                     OutlinedTextField(
-                        value = uiState.currentNote?.contentMarkdown ?: "",
+                        value = uiState.noteContent.ifBlank { uiState.currentNote?.content ?: "" },
                         onValueChange = { newContent ->
-                            viewModel.updateCurrentNoteContent(
-                                title = uiState.currentNote?.title ?: "",
-                                content = newContent
-                            )
+                            viewModel.updateContent(newContent)
                         },
                         placeholder = { Text("Write your notes, lecture summaries, or formulas here...") },
                         minLines = 14,
@@ -281,7 +278,7 @@ fun AiWorkspaceIsland(
                     AiIslandMode.SIMPLIFY -> {
                         SimplifyView(
                             text = uiState.simplifiedText ?: "No summary available.",
-                            onRegenerate = { viewModel.simplifyNote(forceRegenerate = true) },
+                            onRegenerate = { viewModel.generateSimplifiedNotes(forceRegenerate = true) },
                             onSchedule = { viewModel.scheduleNoteTask("Review Simplified") },
                             onDismiss = { viewModel.dismissAiIsland() }
                         )
@@ -311,7 +308,7 @@ fun AiWorkspaceIsland(
                             isSubmitted = uiState.isAnswerSubmitted,
                             score = uiState.quizScore,
                             isFinished = uiState.isQuizFinished,
-                            onSelectOption = { viewModel.selectQuizOption(it) },
+                            onSelectOption = { viewModel.selectQuizAnswer(it) },
                             onNext = { viewModel.nextQuizQuestion() },
                             onReset = { viewModel.resetQuiz() },
                             onSchedule = { viewModel.scheduleNoteTask("Practice Quiz") },
@@ -522,7 +519,7 @@ fun InteractiveQuizCard(
             ) {
                 Text(if (currentIndex + 1 < questions.size) "Next Question" else "View Score Results")
                 Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
             }
         }
     }

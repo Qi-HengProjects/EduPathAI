@@ -22,7 +22,8 @@ class ScheduleRepository {
     }
 
     suspend fun createTask(task: ScheduleTask): ScheduleTask? = withContext(Dispatchers.IO) {
-        val currentUserId = client.auth.currentUserOrNull()?.id ?: return@withContext null
+        val currentUserId = client.auth.currentUserOrNull()?.id
+            ?: throw IllegalStateException("User session expired. Please log in again.")
         val taskWithUser = task.copy(userId = currentUserId)
         try {
             client.from("schedule_tasks").insert(taskWithUser) {
