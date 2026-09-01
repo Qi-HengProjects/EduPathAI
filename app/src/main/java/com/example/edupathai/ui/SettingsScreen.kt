@@ -41,12 +41,14 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     var profile by remember { mutableStateOf<ProfileModel?>(null) }
+    var isProfileLoading by remember { mutableStateOf(true) }
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
     var editUsername by rememberSaveable { mutableStateOf("") }
     var editBio by rememberSaveable { mutableStateOf("") }
 
     fun loadProfile() {
         coroutineScope.launch {
+            isProfileLoading = true
             val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
             val fetched = withContext(Dispatchers.IO) {
                 try {
@@ -65,6 +67,7 @@ fun SettingsScreen(
             profile = user
             editUsername = user.username
             editBio = user.bio ?: ""
+            isProfileLoading = false
         }
     }
 
@@ -126,8 +129,17 @@ fun SettingsScreen(
                             Text(text = profile?.email ?: "", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
                         }
 
-                        IconButton(onClick = { showEditProfileDialog = true }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Profile", tint = Color(0xFF38BDF8))
+                        IconButton(
+                            onClick = {
+                                if (profile != null) {
+                                    editUsername = profile?.username ?: ""
+                                    editBio = profile?.bio ?: ""
+                                    showEditProfileDialog = true
+                                }
+                            },
+                            enabled = !isProfileLoading
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Profile", tint = if (isProfileLoading) Color(0xFF64748B) else Color(0xFF38BDF8))
                         }
                     }
                 }
@@ -196,10 +208,14 @@ fun SettingsScreen(
                             coroutineScope.launch {
                                 try {
                                     val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
+                                    val safeEmail = SupabaseProvider.client.auth.currentUserOrNull()?.email
+                                        ?: profile?.email
+                                        ?: ""
+
                                     val updated = ProfileModel(
                                         id = currentUserId,
-                                        username = editUsername.trim(),
-                                        email = profile?.email ?: "",
+                                        username = editUsername.trim().ifBlank { profile?.username ?: "Student" },
+                                        email = safeEmail,
                                         bio = editBio.trim()
                                     )
                                     withContext(Dispatchers.IO) {

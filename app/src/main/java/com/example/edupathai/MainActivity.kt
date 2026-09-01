@@ -3,6 +3,7 @@ package com.example.edupathai
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -94,7 +95,6 @@ fun MainAppNavigator() {
         try {
             var session = SupabaseProvider.client.auth.currentSessionOrNull()
 
-            // If cached session expired or was cleared, auto-login using saved Remember Me credentials
             if (session == null) {
                 val rememberMe = prefs.getBoolean("remember_me", false)
                 val savedEmail = prefs.getString("saved_email", "") ?: ""
@@ -165,6 +165,7 @@ fun MainAppNavigator() {
     }
 
     if (showSettings) {
+        BackHandler { showSettings = false }
         SettingsScreen(
             userId = currentUserId,
             onBack = { showSettings = false },
@@ -173,7 +174,6 @@ fun MainAppNavigator() {
                     try {
                         SupabaseProvider.client.auth.signOut()
                     } catch (_: Exception) {}
-                    // Clear saved credentials on manual sign out
                     prefs.edit().apply {
                         putBoolean("remember_me", false)
                         remove("saved_email")
@@ -189,6 +189,7 @@ fun MainAppNavigator() {
     }
 
     if (showChatHistory) {
+        BackHandler { showChatHistory = false }
         val historyViewModel: ChatHistoryViewModel = viewModel()
         ChatHistoryScreen(
             viewModel = historyViewModel,
@@ -207,6 +208,13 @@ fun MainAppNavigator() {
             }
         )
         return
+    }
+
+    // Intercept back button from other tabs to return to Dashboard rather than closing the app
+    if (currentDestination != AppDestination.DASHBOARD && activeFolderId == null) {
+        BackHandler {
+            currentDestination = AppDestination.DASHBOARD
+        }
     }
 
     AdaptiveAppScaffold(

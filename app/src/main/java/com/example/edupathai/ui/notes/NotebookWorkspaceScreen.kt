@@ -1,6 +1,7 @@
 package com.example.edupathai.ui.notes
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,6 +43,12 @@ fun NotebookWorkspaceScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    // Auto-save when pressing Android physical/gesture back button
+    BackHandler {
+        viewModel.saveCurrentNote()
+        onNavigateBack()
+    }
+
     LaunchedEffect(uiState.userNotification) {
         uiState.userNotification?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
@@ -75,7 +82,10 @@ fun NotebookWorkspaceScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        viewModel.saveCurrentNote()
+                        onNavigateBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -112,7 +122,6 @@ fun NotebookWorkspaceScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Note Tabs Selector Row
             if (uiState.notes.isNotEmpty()) {
                 LazyRow(
                     modifier = Modifier
@@ -124,7 +133,10 @@ fun NotebookWorkspaceScreen(
                         val isSelected = uiState.currentNote?.id == note.id
                         FilterChip(
                             selected = isSelected,
-                            onClick = { viewModel.selectNote(note) },
+                            onClick = {
+                                viewModel.saveCurrentNote()
+                                viewModel.selectNote(note)
+                            },
                             label = {
                                 Text(
                                     text = note.title.ifBlank { "Untitled" },
@@ -142,7 +154,6 @@ fun NotebookWorkspaceScreen(
                 }
             }
 
-            // Horizontally Scrollable AI Action Toolbar
             Surface(
                 tonalElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
@@ -197,7 +208,6 @@ fun NotebookWorkspaceScreen(
                 }
             }
 
-            // Note Content Editor & AI Islands
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -205,7 +215,6 @@ fun NotebookWorkspaceScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                // AI Workspace Card
                 if (uiState.aiMode != AiIslandMode.NONE) {
                     item {
                         AiWorkspaceIsland(
@@ -215,7 +224,6 @@ fun NotebookWorkspaceScreen(
                     }
                 }
 
-                // Title Input
                 item {
                     OutlinedTextField(
                         value = uiState.noteTitle.ifBlank { uiState.currentNote?.title ?: "" },
@@ -229,7 +237,6 @@ fun NotebookWorkspaceScreen(
                     )
                 }
 
-                // Markdown Editor
                 item {
                     OutlinedTextField(
                         value = uiState.noteContent.ifBlank { uiState.currentNote?.content ?: "" },

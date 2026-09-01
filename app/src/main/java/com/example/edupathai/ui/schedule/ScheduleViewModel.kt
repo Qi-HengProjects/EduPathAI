@@ -9,16 +9,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 data class ScheduleUiState(
     val tasks: List<ScheduleTask> = emptyList(),
+    val selectedDate: LocalDate = LocalDate.now(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val notificationMessage: String? = null
+    val userNotification: String? = null
 )
 
 class ScheduleViewModel(
-    private val repository: ScheduleRepository = ScheduleRepository()
+    private val scheduleRepository: ScheduleRepository = ScheduleRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScheduleUiState())
@@ -32,55 +34,80 @@ class ScheduleViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
-                val fetchedTasks = repository.getTasks()
-                _uiState.update {
-                    it.copy(
-                        tasks = fetchedTasks,
-                        isLoading = false
-                    )
-                }
+                val list = scheduleRepository.getTasks()
+                _uiState.update { it.copy(tasks = list, isLoading = false) }
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load schedule: ${e.message}"
-                    )
-                }
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
             }
         }
     }
 
-    fun toggleTaskCompletion(task: ScheduleTask) {
-        val updatedTask = task.copy(isCompleted = !task.isCompleted)
+    fun selectDate(date: LocalDate) {
+        _uiState.update { it.copy(selectedDate = date) }
+    }
+
+    fun createTask(task: ScheduleTask) {
         viewModelScope.launch {
-            try {
-                // Optimistic UI update
-                _uiState.update { current ->
-                    current.copy(
-                        tasks = current.tasks.map { if (it.id == task.id) updatedTask else it }
-                    )
-                }
-                repository.updateTask(updatedTask)
-            } catch (e: Exception) {
+            val created = scheduleRepository.createTask(task)
+            if (created != null) {
+                _uiState.update { it.copy(tasks = it.tasks + created, userNotification = "Task added to timeline!") }
+            } else {
+                _uiState.update { it.copy(errorMessage = "Failed to add task") }
+            }
+        }
+    }
+
+    fun createTask(
+        title: String,
+        startTime: String,
+        endTime: String,
+        energyLevel: String,
+        taskType: String = "study",
+        colorHex: String = "#3B82F6",
+        date: LocalDate = _uiState.value.selectedDate
+    ) {
+        val task = ScheduleTask(
+            title = title,
+            startTime = startTime,
+            endTime = endTime,
+            energyLevel = energyLevel,
+            taskType = taskType,
+            colorHex = colorHex,
+            taskDate = date.toString()
+        )
+        createTask(task)
+    }
+
+    fun toggleTaskCompletion(task: ScheduleTask) {
+        val updated = task.copy(isCompleted = !task.isCompleted)
+        _uiState.update { state ->
+            state.copy(tasks = state.tasks.map { if (it.id == task.id) updated else it })
+        }
+        viewModelScope.launch {
+            val success = scheduleRepository.updateTask(updated)
+            if (!success) {
+                // Revert optimistic update on database failure
                 loadTasks()
+                _uiState.update { it.copy(errorMessage = "Failed to sync task status.") }
             }
         }
     }
 
     fun deleteTask(taskId: String) {
+        val previousTasks = _uiState.value.tasks
+        _uiState.update { state ->
+            state.copy(tasks = state.tasks.filter { it.id != taskId })
+        }
         viewModelScope.launch {
-            try {
-                _uiState.update { current ->
-                    current.copy(tasks = current.tasks.filterNot { it.id == taskId })
-                }
-                repository.deleteTask(taskId)
-            } catch (e: Exception) {
-                loadTasks()
+            val success = scheduleRepository.deleteTask(taskId)
+            if (!success) {
+                // Revert optimistic deletion on failure
+                _uiState.update { it.copy(tasks = previousTasks, errorMessage = "Failed to delete task.") }
             }
         }
     }
 
     fun clearNotification() {
-        _uiState.update { it.copy(notificationMessage = null, errorMessage = null) }
+        _uiState.update { it.copy(userNotification = null, errorMessage = null) }
     }
 }

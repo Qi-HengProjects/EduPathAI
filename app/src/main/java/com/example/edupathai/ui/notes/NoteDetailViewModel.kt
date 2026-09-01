@@ -79,27 +79,22 @@ class NoteDetailViewModel(
                         )
                     }
                 } else {
-                    val newEntry = Note(
-                        folderId = folderId,
-                        title = "Untitled Note",
-                        content = ""
-                    )
-                    val created = noteRepository.saveNote(newEntry)
-                    val updatedList = if (created != null) listOf(created) else listOf(newEntry)
-                    val first = updatedList.first()
+                    // Create first note cleanly through repository
+                    val created = noteRepository.createNote(folderId = folderId, title = "Untitled Note", content = "")
+                    val listWithInitial = if (created != null) listOf(created) else emptyList()
                     _uiState.update {
                         it.copy(
-                            notes = updatedList,
-                            currentNote = first,
+                            notes = listWithInitial,
+                            currentNote = created,
                             currentNoteIndex = 0,
-                            noteTitle = first.title,
-                            noteContent = first.content,
+                            noteTitle = created?.title ?: "Untitled Note",
+                            noteContent = created?.content ?: "",
                             isLoading = false
                         )
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Error: ${e.message}") }
+                _uiState.update { it.copy(isLoading = false, errorMessage = "Error loading notes: ${e.message}") }
             }
         }
     }
@@ -125,29 +120,39 @@ class NoteDetailViewModel(
     }
 
     fun createNewNote() {
+        val state = _uiState.value
+        val activeNote = state.currentNote
+
+        // Check if the current note is already a blank, unedited note to avoid duplicate empty rows
+        if (activeNote != null && activeNote.id != null &&
+            (activeNote.title == "Untitled Note" || activeNote.title.isBlank()) &&
+            activeNote.content.isBlank()
+        ) {
+            _uiState.update { it.copy(userNotification = "Current note is already empty.") }
+            return
+        }
+
         viewModelScope.launch {
-            try {
-                val newNote = Note(
-                    folderId = folderId,
-                    title = "New Note",
-                    content = ""
-                )
-                val saved = noteRepository.saveNote(newNote)
-                if (saved != null) {
-                    val updatedList = _uiState.value.notes + saved
-                    val newIndex = updatedList.size - 1
-                    _uiState.update {
-                        it.copy(
-                            notes = updatedList,
-                            currentNote = saved,
-                            currentNoteIndex = newIndex,
-                            noteTitle = saved.title,
-                            noteContent = saved.content,
-                            userNotification = "New note created"
-                        )
-                    }
+            // Save active note if it has unsaved edits
+            if (activeNote != null && activeNote.id != null) {
+                saveCurrentNote()
+            }
+
+            val saved = noteRepository.createNote(folderId = folderId, title = "New Note", content = "")
+            if (saved != null) {
+                val updatedList = _uiState.value.notes + saved
+                val newIndex = updatedList.size - 1
+                _uiState.update {
+                    it.copy(
+                        notes = updatedList,
+                        currentNote = saved,
+                        currentNoteIndex = newIndex,
+                        noteTitle = saved.title,
+                        noteContent = saved.content,
+                        userNotification = "New note created"
+                    )
                 }
-            } catch (_: Exception) {}
+            }
         }
     }
 
@@ -186,15 +191,19 @@ class NoteDetailViewModel(
                     title = state.noteTitle.ifBlank { "Untitled Note" },
                     content = state.noteContent
                 )
-                noteRepository.saveNote(updated)
-                val updatedList = state.notes.map { if (it.id == updated.id) updated else it }
-                _uiState.update {
-                    it.copy(
-                        notes = updatedList,
-                        currentNote = updated,
-                        isSaving = false,
-                        userNotification = "Saved successfully!"
-                    )
+                val persisted = noteRepository.saveNote(updated)
+                if (persisted != null) {
+                    val updatedList = state.notes.map { if (it.id == persisted.id) persisted else it }
+                    _uiState.update {
+                        it.copy(
+                            notes = updatedList,
+                            currentNote = persisted,
+                            isSaving = false,
+                            userNotification = "Saved successfully!"
+                        )
+                    }
+                } else {
+                    _uiState.update { it.copy(isSaving = false, errorMessage = "Failed to save note") }
                 }
             } catch (_: Exception) {
                 _uiState.update { it.copy(isSaving = false, errorMessage = "Failed to save note") }
@@ -209,24 +218,25 @@ class NoteDetailViewModel(
         val target = notes.getOrNull(state.currentNoteIndex) ?: state.currentNote ?: return
 
         viewModelScope.launch {
-            try {
-                target.id?.let { noteRepository.deleteNote(it) }
-                val remaining = notes.filterNot { it.id == target.id }
-                if (remaining.isNotEmpty()) {
-                    val first = remaining.first()
-                    _uiState.update {
-                        it.copy(
-                            notes = remaining,
-                            currentNote = first,
-                            currentNoteIndex = 0,
-                            noteTitle = first.title,
-                            noteContent = first.content
-                        )
-                    }
-                } else {
-                    createNewNote()
+            val targetId = target.id
+            if (targetId != null) {
+                noteRepository.deleteNote(targetId)
+            }
+            val remaining = notes.filterNot { it.id == target.id }
+            if (remaining.isNotEmpty()) {
+                val first = remaining.first()
+                _uiState.update {
+                    it.copy(
+                        notes = remaining,
+                        currentNote = first,
+                        currentNoteIndex = 0,
+                        noteTitle = first.title,
+                        noteContent = first.content
+                    )
                 }
-            } catch (_: Exception) {}
+            } else {
+                createNewNote()
+            }
         }
     }
 
@@ -320,19 +330,6 @@ class NoteDetailViewModel(
         }
     }
 
-    fun selectQuizOption(optionIndex: Int) {
-        val state = _uiState.value
-        if (state.isAnswerSubmitted) return
-        val currentQ = state.quizQuestions.getOrNull(state.currentQuizIndex) ?: return
-        val chosenText = currentQ.options.getOrNull(optionIndex) ?: return
-        _uiState.update {
-            it.copy(
-                selectedQuizOption = optionIndex,
-                selectedQuizAnswer = chosenText
-            )
-        }
-    }
-
     fun selectQuizAnswer(answer: String) {
         val state = _uiState.value
         if (state.isAnswerSubmitted) return
@@ -423,6 +420,4 @@ class NoteDetailViewModel(
             )
         }
     }
-
-    fun clearFeedback() = clearNotification()
 }

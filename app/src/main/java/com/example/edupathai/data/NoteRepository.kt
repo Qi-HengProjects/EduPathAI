@@ -35,46 +35,99 @@ class NoteRepository {
 
     suspend fun addFolder(name: String, colorHex: String): NoteFolder? = createFolder(name, colorHex)
 
-    suspend fun deleteFolder(folderId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteFolder(folderId: String): Boolean = withContext(Dispatchers.IO) {
+        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext false
         try {
-            client.from("note_folders").delete {
-                filter { eq("id", folderId) }
+            // Clean up notes inside the folder first to prevent orphaned records in database
+            client.from("notes").delete {
+                filter {
+                    eq("folder_id", folderId)
+                    eq("user_id", userId)
+                }
             }
-        } catch (_: Exception) {}
+            client.from("note_folders").delete {
+                filter {
+                    eq("id", folderId)
+                    eq("user_id", userId)
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
-    suspend fun getNotesForFolder(folderId: String): List<NoteBookEntry> = withContext(Dispatchers.IO) {
+    suspend fun getNotesForFolder(folderId: String): List<Note> = withContext(Dispatchers.IO) {
+        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
         try {
             client.from("notes").select {
-                filter { eq("folder_id", folderId) }
+                filter {
+                    eq("folder_id", folderId)
+                    eq("user_id", userId)
+                }
                 order(column = "updated_at", order = Order.DESCENDING)
-            }.decodeList<NoteBookEntry>()
+            }.decodeList<Note>()
         } catch (_: Exception) {
             emptyList()
         }
     }
 
-    suspend fun getNotes(folderId: String): List<NoteBookEntry> = getNotesForFolder(folderId)
+    suspend fun getNotes(folderId: String): List<Note> = getNotesForFolder(folderId)
 
-    suspend fun saveNote(note: NoteBookEntry): NoteBookEntry? = withContext(Dispatchers.IO) {
+    /**
+     * Creates a brand-new note record and returns the persisted row with its server-generated ID.
+     */
+    suspend fun createNote(folderId: String, title: String = "Untitled Note", content: String = ""): Note? = withContext(Dispatchers.IO) {
         val userId = client.auth.currentUserOrNull()?.id ?: return@withContext null
         try {
-            val noteWithUser = note.copy(userId = userId)
-            client.from("notes").upsert(noteWithUser) {
+            val newEntry = Note(
+                id = null,
+                userId = userId,
+                folderId = folderId,
+                title = title,
+                content = content
+            )
+            client.from("notes").insert(newEntry) {
                 select()
-            }.decodeSingle<NoteBookEntry>()
+            }.decodeSingle<Note>()
         } catch (_: Exception) {
             null
         }
     }
 
-    suspend fun addNote(note: NoteBookEntry): NoteBookEntry? = saveNote(note)
+    /**
+     * Updates an existing note or creates one if no ID is present.
+     */
+    suspend fun saveNote(note: Note): Note? = withContext(Dispatchers.IO) {
+        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext null
+        try {
+            val noteWithUser = note.copy(userId = userId)
+            if (note.id.isNullOrBlank()) {
+                createNote(note.folderId, note.title, note.content)
+            } else {
+                client.from("notes").upsert(noteWithUser) {
+                    select()
+                }.decodeSingle<Note>()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-    suspend fun deleteNote(noteId: String) = withContext(Dispatchers.IO) {
+    suspend fun addNote(note: Note): Note? = saveNote(note)
+
+    suspend fun deleteNote(noteId: String): Boolean = withContext(Dispatchers.IO) {
+        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext false
         try {
             client.from("notes").delete {
-                filter { eq("id", noteId) }
+                filter {
+                    eq("id", noteId)
+                    eq("user_id", userId)
+                }
             }
-        } catch (_: Exception) {}
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 }
