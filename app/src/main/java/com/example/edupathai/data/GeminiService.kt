@@ -1,5 +1,6 @@
 package com.example.edupathai.data
 
+import android.util.Log
 import com.example.edupathai.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
@@ -9,6 +10,7 @@ import kotlinx.serialization.json.Json
 import java.util.concurrent.atomic.AtomicInteger
 
 object GeminiService {
+    private const val TAG = "GeminiService"
     private val apiKeys: List<String> by lazy {
         val multiKeys = BuildConfig.GEMINI_API_KEYS
         if (multiKeys.isNotBlank()) {
@@ -53,11 +55,21 @@ object GeminiService {
         return text.trim()
     }
 
+    // Holds the last real failure so callers can surface something useful
+    // instead of the generic "all keys failed" message.
+    @Volatile
+    private var lastError: Throwable? = null
+
     private suspend fun <T> executeWithFallback(
         operationName: String,
         action: suspend (GenerativeModel) -> T
     ): T? = withContext(Dispatchers.IO) {
+        lastError = null
+
         if (apiKeys.isEmpty()) {
+            Log.e(TAG, "[$operationName] No Gemini API keys found. Check that " +
+                    "GEMINI_API_KEY or GEMINI_API_KEYS is set in local.properties, then " +
+                    "Sync Gradle + Rebuild (BuildConfig is baked in at build time).")
             return@withContext null
         }
 
@@ -77,6 +89,15 @@ object GeminiService {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
+                lastError = e
+                // Log the REAL reason this key/request failed — this is what
+                // was previously being swallowed and reported only as
+                // "all keys failed or are missing".
+                Log.e(
+                    TAG,
+                    "[$operationName] Key #$keyIndex failed: ${e.javaClass.simpleName} - ${e.message}",
+                    e
+                )
                 attempts++
                 currentKeyIndex.incrementAndGet()
             }
@@ -84,14 +105,38 @@ object GeminiService {
         null
     }
 
+    /**
+     * Human-readable detail for the most recent failure, if any.
+     * Useful for surfacing a real cause (invalid key, network error,
+     * model not found, quota exceeded, etc.) in the UI instead of a
+     * generic message.
+     */
+    fun lastErrorMessage(): String? {
+        val e = lastError ?: return null
+        return "${e.javaClass.simpleName}: ${e.message ?: "no details"}"
+    }
+
     suspend fun generateResponse(prompt: String): String {
         val plainTextInstruction = "Respond in clear, natural plain text. Do NOT use markdown syntax (no asterisks, no hashes, no bold tags, no horizontal lines).\n\n"
         val raw = executeWithFallback("generateResponse") { model ->
             val response = model.generateContent(plainTextInstruction + prompt)
             response.text ?: "No response generated."
-        } ?: "Error: All Gemini API keys failed or are missing."
+        } ?: buildErrorMessage()
 
         return cleanPlainText(raw)
+    }
+
+    private fun buildErrorMessage(): String {
+        val detail = lastErrorMessage()
+        return if (apiKeys.isEmpty()) {
+            "Error: No Gemini API key found. Add GEMINI_API_KEY to local.properties, " +
+                    "then Sync Gradle + Rebuild the project (the key is baked into BuildConfig " +
+                    "at build time, so just re-running the app is not enough)."
+        } else if (detail != null) {
+            "Error: All Gemini API keys failed. Last error: $detail"
+        } else {
+            "Error: All Gemini API keys failed or are missing."
+        }
     }
 
     suspend fun generateSessionTitle(firstUserMessage: String): String {
