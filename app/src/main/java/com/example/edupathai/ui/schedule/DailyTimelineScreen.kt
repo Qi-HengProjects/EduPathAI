@@ -68,6 +68,7 @@ fun DailyTimelineScreen(
     }
 
     val completedCount = tasksForSelectedDate.count { it.isCompleted }
+    val overdueCount = tasksForSelectedDate.count { it.isOverdue }
     val totalCount = tasksForSelectedDate.size
     val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
 
@@ -258,7 +259,7 @@ fun DailyTimelineScreen(
                 }
             }
 
-            // Fixed & Expanded Daily Progress Card
+            // Daily Progress & Status Card (with Overdue Indicator)
             item {
                 val isToday = uiState.selectedDate == LocalDate.now()
                 val dayOfWeek = uiState.selectedDate.format(DateTimeFormatter.ofPattern("EEEE"))
@@ -303,37 +304,56 @@ fun DailyTimelineScreen(
                                     }
                                 }
 
-                                Column {
-                                    Text(
-                                        text = "$dayOfWeek, $formattedDate",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                                Text(
+                                    text = "$dayOfWeek, $formattedDate",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
 
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
 
-                            // Right Section: Completion Status Badge
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFF1E293B),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (totalCount > 0 && completedCount == totalCount) Color(0xFF10B981) else Color(0xFF334155)
-                                )
+                            // Right Section: Completion and Overdue Badges
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = "$completedCount/$totalCount Completed",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (totalCount > 0 && completedCount == totalCount) Color(0xFF10B981) else Color(0xFF38BDF8),
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                )
+                                if (overdueCount > 0) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f))
+                                    ) {
+                                        Text(
+                                            text = "$overdueCount Overdue",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFFEF4444),
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFF1E293B),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (totalCount > 0 && completedCount == totalCount) Color(0xFF10B981) else Color(0xFF334155)
+                                    )
+                                ) {
+                                    Text(
+                                        text = "$completedCount/$totalCount Completed",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (totalCount > 0 && completedCount == totalCount) Color(0xFF10B981) else Color(0xFF38BDF8),
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -442,10 +462,16 @@ fun TaskTimelineItemCard(
     onToggleCompletion: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val taskColor = try {
+    val baseColor = try {
         Color(android.graphics.Color.parseColor(task.colorHex))
     } catch (_: Exception) {
         Color(0xFF3B82F6)
+    }
+
+    val borderColor = when {
+        task.isCompleted -> Color(0xFF1E293B)
+        task.isOverdue -> Color(0xFFEF4444).copy(alpha = 0.6f)
+        else -> baseColor.copy(alpha = 0.4f)
     }
 
     Card(
@@ -454,7 +480,7 @@ fun TaskTimelineItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 5.dp)
-            .border(1.dp, if (task.isCompleted) Color(0xFF1E293B) else taskColor.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
     ) {
         Row(
             modifier = Modifier
@@ -467,7 +493,7 @@ fun TaskTimelineItemCard(
                 onCheckedChange = { onToggleCompletion() },
                 colors = CheckboxDefaults.colors(
                     checkedColor = Color(0xFF10B981),
-                    uncheckedColor = Color(0xFF64748B),
+                    uncheckedColor = if (task.isOverdue) Color(0xFFEF4444) else Color(0xFF64748B),
                     checkmarkColor = Color.White
                 )
             )
@@ -479,7 +505,11 @@ fun TaskTimelineItemCard(
                     text = task.title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (task.isCompleted) Color(0xFF64748B) else Color.White,
+                    color = when {
+                        task.isCompleted -> Color(0xFF64748B)
+                        task.isOverdue -> Color(0xFFFCA5A5)
+                        else -> Color.White
+                    },
                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -491,6 +521,24 @@ fun TaskTimelineItemCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Overdue Alert Badge
+                    if (task.isOverdue) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                text = "⚠️ Overdue",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFEF4444),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    // Time Badge
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = Color(0xFF1E293B)
@@ -503,14 +551,15 @@ fun TaskTimelineItemCard(
                         )
                     }
 
+                    // Energy Level Badge
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = taskColor.copy(alpha = 0.2f)
+                        color = baseColor.copy(alpha = 0.2f)
                     ) {
                         Text(
                             text = task.energyLevel,
                             style = MaterialTheme.typography.labelSmall,
-                            color = taskColor,
+                            color = baseColor,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }

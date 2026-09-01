@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,13 +33,15 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsScreen(
     userId: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onLoggedOut: () -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
     var profile by remember { mutableStateOf<ProfileModel?>(null) }
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
+    var showSignOutConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var editUsername by rememberSaveable { mutableStateOf("") }
     var editBio by rememberSaveable { mutableStateOf("") }
 
@@ -138,6 +141,29 @@ fun SettingsScreen(
                     onClick = { Toast.makeText(context, "EduPath AI • Powered by Gemini AI", Toast.LENGTH_SHORT).show() }
                 )
             }
+
+            // Sign Out Card Button
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                        .clickable { showSignOutConfirmDialog = true }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color(0xFFEF4444))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Sign Out", fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                    }
+                }
+            }
         }
 
         if (showEditProfileDialog) {
@@ -192,6 +218,37 @@ fun SettingsScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showEditProfileDialog = false }) {
+                        Text("Cancel", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        if (showSignOutConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showSignOutConfirmDialog = false },
+                containerColor = Color(0xFF131C2E),
+                title = { Text("Sign Out", fontWeight = FontWeight.Bold, color = Color.White) },
+                text = {
+                    Text(
+                        "Are you sure you want to sign out of your account?",
+                        color = Color(0xFF94A3B8),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showSignOutConfirmDialog = false
+                            onLoggedOut()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    ) {
+                        Text("Sign Out", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSignOutConfirmDialog = false }) {
                         Text("Cancel", color = Color(0xFF94A3B8))
                     }
                 }
