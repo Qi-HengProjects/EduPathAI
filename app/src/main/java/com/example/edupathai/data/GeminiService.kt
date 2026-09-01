@@ -163,7 +163,12 @@ object GeminiService {
             val chat = model.startChat(history = chatHistory)
             val response = chat.sendMessage(userMessage)
             response.text ?: "No response generated."
-        } ?: generateResponse(userMessage)
+        } ?: buildErrorMessage()
+        // NOTE: previously fell back to generateResponse(userMessage) here, which
+        // re-ran executeWithFallback and looped through every key a SECOND time.
+        // That doubled (and, combined with generateSessionTitle, could triple)
+        // the requests burned per message — exhausting all keys' quota almost
+        // immediately even when some keys had fresh quota available.
 
         return cleanPlainText(raw)
     }

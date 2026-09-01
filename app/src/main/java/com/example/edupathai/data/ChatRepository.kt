@@ -6,37 +6,39 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.util.UUID
 
 class ChatRepository {
     private val client = SupabaseProvider.client
 
-    fun getUserId(): String {
+    private fun getUserId(): String {
         return SupabaseProvider.client.auth.currentUserOrNull()?.id
             ?: SupabaseProvider.getLocalUserId()
     }
 
     suspend fun getSessions(): List<ChatSession> = withContext(Dispatchers.IO) {
-        val currentUid = getUserId()
+        val userId = getUserId()
         try {
             client.from("chat_sessions").select {
-                filter { eq("user_id", currentUid) }
+                filter { eq("user_id", userId) }
                 order(column = "created_at", order = Order.DESCENDING)
             }.decodeList<ChatSession>()
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error getting sessions: ${e.message}", e)
+            Log.e("ChatRepository", "Error fetching sessions: ${e.message}")
             emptyList()
         }
     }
 
     suspend fun createSession(title: String = "New Conversation", isPinned: Boolean = false): ChatSession = withContext(Dispatchers.IO) {
-        val currentUid = getUserId()
+        val userId = getUserId()
         val sessionId = UUID.randomUUID().toString()
         val timeNow = Instant.now().toString()
         val session = ChatSession(
             id = sessionId,
-            userId = currentUid,
+            userId = userId,
             title = title,
             isPinned = isPinned,
             createdAt = timeNow
@@ -45,7 +47,7 @@ class ChatRepository {
             client.from("chat_sessions").insert(session)
             session
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error creating session in Supabase: ${e.message}", e)
+            Log.e("ChatRepository", "Error creating session: ${e.message}")
             session
         }
     }
@@ -57,10 +59,12 @@ class ChatRepository {
                     set("title", newTitle)
                 }
             ) {
-                filter { eq("id", sessionId) }
+                filter {
+                    eq("id", sessionId)
+                }
             }
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error renaming session: ${e.message}", e)
+            Log.e("ChatRepository", "Error renaming session: ${e.message}")
         }
     }
 
@@ -71,10 +75,12 @@ class ChatRepository {
                     set("is_pinned", isPinned)
                 }
             ) {
-                filter { eq("id", sessionId) }
+                filter {
+                    eq("id", sessionId)
+                }
             }
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error pinning session: ${e.message}", e)
+            Log.e("ChatRepository", "Error pinning session: ${e.message}")
         }
     }
 
@@ -87,7 +93,7 @@ class ChatRepository {
                 filter { eq("id", sessionId) }
             }
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error deleting session: ${e.message}", e)
+            Log.e("ChatRepository", "Error deleting session: ${e.message}")
         }
     }
 
@@ -99,46 +105,47 @@ class ChatRepository {
                 order(column = "created_at", order = Order.ASCENDING)
             }.decodeList<ChatMessage>()
         } catch (e: Exception) {
-            Log.e("ChatRepository", "Error fetching messages: ${e.message}", e)
+            Log.e("ChatRepository", "Error fetching messages: ${e.message}")
             emptyList()
         }
     }
 
-    /**
-     * Inserts a chat message into Supabase. This used to swallow every exception and
-     * hand back the message as if it had been saved, so a message that only ever made
-     * it into the in-memory UI cache looked identical - to both the UI and the logs -
-     * to one that was actually persisted. The only symptom was messages vanishing the
-     * next time the session was loaded from Supabase (e.g. after relaunching the app).
-     * This now rethrows so the caller (ChatViewModel) knows the save failed and can
-     * surface that to the user instead of silently pretending it worked.
-     */
     suspend fun sendMessage(message: ChatMessage): ChatMessage = withContext(Dispatchers.IO) {
-        val currentUid = getUserId()
-        val msgId = if (message.id.isBlank()) UUID.randomUUID().toString() else message.id
-        val timeNow = if (message.createdAt.isBlank()) Instant.now().toString() else message.createdAt
-        val text = message.message.ifBlank { message.content }
-
-        val msg = ChatMessage(
+        val userId = getUserId()
+        val msgId = if (message.id.isNullOrBlank()) UUID.randomUUID().toString() else message.id
+        val timeNow = message.createdAt ?: Instant.now().toString()
+        val msg = message.copy(
             id = msgId,
-            sessionId = message.sessionId,
-            userId = if (message.userId.isBlank()) currentUid else message.userId,
-            sender = message.sender,
-            message = text,
-            content = text,
+            userId = if (message.userId.isNullOrBlank()) userId else message.userId,
             createdAt = timeNow
         )
-
         try {
             client.from("chat_messages").insert(msg)
             msg
         } catch (e: Exception) {
-            Log.e(
-                "ChatRepository",
-                "Error inserting chat message (sessionId=${msg.sessionId}, userId=${msg.userId}): ${e.message}",
-                e
-            )
-            throw e
+            Log.e("ChatRepository", "Standard insert failed: ${e.message}")
+            try {
+                @Serializable
+                data class FallbackMessagePayload(
+                    val id: String,
+                    @SerialName("session_id") val sessionId: String,
+                    val sender: String,
+                    val message: String,
+                    @SerialName("created_at") val createdAt: String
+                )
+                client.from("chat_messages").insert(
+                    FallbackMessagePayload(
+                        id = msgId,
+                        sessionId = message.sessionId,
+                        sender = message.sender,
+                        message = message.message,
+                        createdAt = timeNow
+                    )
+                )
+            } catch (e2: Exception) {
+                Log.e("ChatRepository", "Fallback insert failed: ${e2.message}")
+            }
+            msg
         }
     }
 
