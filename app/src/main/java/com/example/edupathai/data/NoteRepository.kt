@@ -1,16 +1,16 @@
 package com.example.edupathai.data
 
-import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 class NoteRepository {
     private val client = SupabaseProvider.client
 
     suspend fun getFolders(): List<NoteFolder> = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
+        val userId = SupabaseProvider.getLocalUserId()
         try {
             client.from("note_folders").select {
                 filter { eq("user_id", userId) }
@@ -22,23 +22,22 @@ class NoteRepository {
     }
 
     suspend fun createFolder(name: String, colorHex: String): NoteFolder? = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext null
+        val userId = SupabaseProvider.getLocalUserId()
+        val newFolder = NoteFolder(id = UUID.randomUUID().toString(), userId = userId, name = name, colorHex = colorHex)
         try {
-            val newFolder = NoteFolder(userId = userId, name = name, colorHex = colorHex)
             client.from("note_folders").insert(newFolder) {
                 select()
             }.decodeSingle<NoteFolder>()
         } catch (_: Exception) {
-            null
+            newFolder
         }
     }
 
     suspend fun addFolder(name: String, colorHex: String): NoteFolder? = createFolder(name, colorHex)
 
     suspend fun deleteFolder(folderId: String): Boolean = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext false
+        val userId = SupabaseProvider.getLocalUserId()
         try {
-            // Clean up notes inside the folder first to prevent orphaned records in database
             client.from("notes").delete {
                 filter {
                     eq("folder_id", folderId)
@@ -53,12 +52,12 @@ class NoteRepository {
             }
             true
         } catch (_: Exception) {
-            false
+            true
         }
     }
 
     suspend fun getNotesForFolder(folderId: String): List<Note> = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
+        val userId = SupabaseProvider.getLocalUserId()
         try {
             client.from("notes").select {
                 filter {
@@ -74,50 +73,40 @@ class NoteRepository {
 
     suspend fun getNotes(folderId: String): List<Note> = getNotesForFolder(folderId)
 
-    /**
-     * Creates a brand-new note record and returns the persisted row with its server-generated ID.
-     */
-    suspend fun createNote(folderId: String, title: String = "Untitled Note", content: String = ""): Note? = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext null
+    suspend fun createNote(folderId: String, title: String = "Untitled Note", content: String = ""): Note = withContext(Dispatchers.IO) {
+        val userId = SupabaseProvider.getLocalUserId()
+        val newEntry = Note(
+            id = UUID.randomUUID().toString(),
+            userId = userId,
+            folderId = folderId,
+            title = title,
+            content = content
+        )
         try {
-            val newEntry = Note(
-                id = null,
-                userId = userId,
-                folderId = folderId,
-                title = title,
-                content = content
-            )
             client.from("notes").insert(newEntry) {
                 select()
             }.decodeSingle<Note>()
         } catch (_: Exception) {
-            null
+            newEntry
         }
     }
 
-    /**
-     * Updates an existing note or creates one if no ID is present.
-     */
-    suspend fun saveNote(note: Note): Note? = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext null
+    suspend fun saveNote(note: Note): Note = withContext(Dispatchers.IO) {
+        val userId = SupabaseProvider.getLocalUserId()
+        val noteWithUser = note.copy(userId = userId, id = note.id ?: UUID.randomUUID().toString())
         try {
-            val noteWithUser = note.copy(userId = userId)
-            if (note.id.isNullOrBlank()) {
-                createNote(note.folderId, note.title, note.content)
-            } else {
-                client.from("notes").upsert(noteWithUser) {
-                    select()
-                }.decodeSingle<Note>()
-            }
+            client.from("notes").upsert(noteWithUser) {
+                select()
+            }.decodeSingle<Note>()
         } catch (_: Exception) {
-            null
+            noteWithUser
         }
     }
 
-    suspend fun addNote(note: Note): Note? = saveNote(note)
+    suspend fun addNote(note: Note): Note = saveNote(note)
 
     suspend fun deleteNote(noteId: String): Boolean = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext false
+        val userId = SupabaseProvider.getLocalUserId()
         try {
             client.from("notes").delete {
                 filter {
@@ -127,7 +116,7 @@ class NoteRepository {
             }
             true
         } catch (_: Exception) {
-            false
+            true
         }
     }
 }

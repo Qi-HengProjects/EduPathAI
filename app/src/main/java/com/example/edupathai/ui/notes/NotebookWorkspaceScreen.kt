@@ -43,7 +43,6 @@ fun NotebookWorkspaceScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // Auto-save when pressing Android physical/gesture back button
     BackHandler {
         viewModel.saveCurrentNote()
         onNavigateBack()
@@ -133,10 +132,7 @@ fun NotebookWorkspaceScreen(
                         val isSelected = uiState.currentNote?.id == note.id
                         FilterChip(
                             selected = isSelected,
-                            onClick = {
-                                viewModel.saveCurrentNote()
-                                viewModel.selectNote(note)
-                            },
+                            onClick = { viewModel.selectNote(note) },
                             label = {
                                 Text(
                                     text = note.title.ifBlank { "Untitled" },
@@ -226,7 +222,7 @@ fun NotebookWorkspaceScreen(
 
                 item {
                     OutlinedTextField(
-                        value = uiState.noteTitle.ifBlank { uiState.currentNote?.title ?: "" },
+                        value = uiState.noteTitle,
                         onValueChange = { newTitle ->
                             viewModel.updateTitle(newTitle)
                         },
@@ -239,7 +235,7 @@ fun NotebookWorkspaceScreen(
 
                 item {
                     OutlinedTextField(
-                        value = uiState.noteContent.ifBlank { uiState.currentNote?.content ?: "" },
+                        value = uiState.noteContent,
                         onValueChange = { newContent ->
                             viewModel.updateContent(newContent)
                         },
@@ -315,7 +311,10 @@ fun AiWorkspaceIsland(
                             isSubmitted = uiState.isAnswerSubmitted,
                             score = uiState.quizScore,
                             isFinished = uiState.isQuizFinished,
-                            onSelectOption = { viewModel.selectQuizAnswer(it) },
+                            onSelectOption = { answer ->
+                                viewModel.selectQuizAnswer(answer)
+                                viewModel.submitQuizAnswer() // Auto-submits on click to validate and advance
+                            },
                             onNext = { viewModel.nextQuizQuestion() },
                             onReset = { viewModel.resetQuiz() },
                             onSchedule = { viewModel.scheduleNoteTask("Practice Quiz") },
@@ -369,7 +368,7 @@ fun InteractiveQuizCard(
                 text = "Your Score: $score / ${questions.size}",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.ExtraBold,
-                color = if (score >= questions.size / 2) Color(0xFF10B981) else Color(0xFFEF4444)
+                color = if (score >= (questions.size + 1) / 2) Color(0xFF10B981) else Color(0xFFEF4444)
             )
 
             Row(

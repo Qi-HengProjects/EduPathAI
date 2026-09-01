@@ -1,16 +1,16 @@
 package com.example.edupathai.data
 
-import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 class ChatRepository {
     private val client = SupabaseProvider.client
 
     suspend fun getSessions(): List<ChatSession> = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext emptyList()
+        val userId = SupabaseProvider.getLocalUserId()
         try {
             client.from("chat_sessions").select {
                 filter { eq("user_id", userId) }
@@ -22,20 +22,20 @@ class ChatRepository {
         }
     }
 
-    suspend fun createSession(title: String = "New Conversation", isPinned: Boolean = false): ChatSession? = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext null
+    suspend fun createSession(title: String = "New Conversation", isPinned: Boolean = false): ChatSession = withContext(Dispatchers.IO) {
+        val userId = SupabaseProvider.getLocalUserId()
+        val session = ChatSession(id = UUID.randomUUID().toString(), userId = userId, title = title, isPinned = isPinned)
         try {
-            val session = ChatSession(userId = userId, title = title, isPinned = isPinned)
             client.from("chat_sessions").insert(session) {
                 select()
             }.decodeSingle<ChatSession>()
         } catch (_: Exception) {
-            null
+            session
         }
     }
 
     suspend fun renameSession(sessionId: String, newTitle: String) = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext
+        val userId = SupabaseProvider.getLocalUserId()
         try {
             client.from("chat_sessions").update(
                 {
@@ -50,10 +50,8 @@ class ChatRepository {
         } catch (_: Exception) {}
     }
 
-    suspend fun updateSessionTitle(sessionId: String, title: String) = renameSession(sessionId, title)
-
     suspend fun togglePinSession(sessionId: String, isPinned: Boolean) = withContext(Dispatchers.IO) {
-        val userId = client.auth.currentUserOrNull()?.id ?: return@withContext
+        val userId = SupabaseProvider.getLocalUserId()
         try {
             client.from("chat_sessions").update(
                 {
@@ -67,8 +65,6 @@ class ChatRepository {
             }
         } catch (_: Exception) {}
     }
-
-    suspend fun toggleSessionPin(sessionId: String, isPinned: Boolean) = togglePinSession(sessionId, isPinned)
 
     suspend fun deleteSession(sessionId: String) = withContext(Dispatchers.IO) {
         try {
@@ -89,16 +85,17 @@ class ChatRepository {
         }
     }
 
-    suspend fun sendMessage(message: ChatMessage): ChatMessage? = withContext(Dispatchers.IO) {
+    suspend fun sendMessage(message: ChatMessage): ChatMessage = withContext(Dispatchers.IO) {
+        val msg = message.copy(id = message.id ?: UUID.randomUUID().toString())
         try {
-            client.from("chat_messages").insert(message) {
+            client.from("chat_messages").insert(msg) {
                 select()
             }.decodeSingle<ChatMessage>()
         } catch (_: Exception) {
-            null
+            msg
         }
     }
 
-    suspend fun addMessage(message: ChatMessage): ChatMessage? = sendMessage(message)
-    suspend fun saveMessage(message: ChatMessage): ChatMessage? = sendMessage(message)
+    suspend fun addMessage(message: ChatMessage): ChatMessage = sendMessage(message)
+    suspend fun saveMessage(message: ChatMessage): ChatMessage = sendMessage(message)
 }

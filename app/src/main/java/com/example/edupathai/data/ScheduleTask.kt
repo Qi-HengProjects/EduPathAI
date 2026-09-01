@@ -15,9 +15,8 @@ data class ScheduleTask(
     @SerialName("task_type") val taskType: String = "study",
     @SerialName("color_hex") val colorHex: String = "#3B82F6",
     @SerialName("is_completed") val isCompleted: Boolean = false,
-    @SerialName("task_date") val taskDate: String? = null,
     @SerialName("created_at") val createdAt: String? = null
 ) {
     val effectiveDate: String
-        get() = taskDate ?: createdAt?.take(10) ?: LocalDate.now().toString()
+        get() = createdAt?.take(10) ?: LocalDate.now().toString()
 }

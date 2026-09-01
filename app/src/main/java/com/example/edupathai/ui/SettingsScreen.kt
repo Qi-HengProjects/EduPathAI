@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +23,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.edupathai.data.ProfileModel
 import com.example.edupathai.data.SupabaseProvider
-import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,45 +32,35 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsScreen(
     userId: String,
-    onBack: () -> Unit,
-    onLoggedOut: () -> Unit
+    onBack: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
     var profile by remember { mutableStateOf<ProfileModel?>(null) }
-    var isProfileLoading by remember { mutableStateOf(true) }
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
     var editUsername by rememberSaveable { mutableStateOf("") }
     var editBio by rememberSaveable { mutableStateOf("") }
 
-    fun loadProfile() {
-        coroutineScope.launch {
-            isProfileLoading = true
-            val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
-            val fetched = withContext(Dispatchers.IO) {
-                try {
-                    SupabaseProvider.client.from("profiles").select {
-                        filter { eq("id", currentUserId) }
-                    }.decodeSingleOrNull<ProfileModel>()
-                } catch (_: Exception) {
-                    null
-                }
-            }
-            val user = fetched ?: ProfileModel(
-                id = currentUserId,
-                username = SupabaseProvider.client.auth.currentUserOrNull()?.email?.substringBefore("@") ?: "Student",
-                email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: "student@university.edu"
-            )
-            profile = user
-            editUsername = user.username
-            editBio = user.bio ?: ""
-            isProfileLoading = false
-        }
-    }
-
     LaunchedEffect(userId) {
-        loadProfile()
+        val fetched = withContext(Dispatchers.IO) {
+            try {
+                SupabaseProvider.client.from("profiles").select {
+                    filter { eq("id", userId) }
+                }.decodeSingleOrNull<ProfileModel>()
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val user = fetched ?: ProfileModel(
+            id = userId,
+            username = "Student",
+            email = "student@edupath.ai",
+            bio = "Computer Science Student"
+        )
+        profile = user
+        editUsername = user.username
+        editBio = user.bio ?: ""
     }
 
     Scaffold(
@@ -126,20 +114,17 @@ fun SettingsScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = profile?.username ?: "Student", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text(text = profile?.email ?: "", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
+                            Text(text = profile?.bio ?: "Study Profile", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
                         }
 
                         IconButton(
                             onClick = {
-                                if (profile != null) {
-                                    editUsername = profile?.username ?: ""
-                                    editBio = profile?.bio ?: ""
-                                    showEditProfileDialog = true
-                                }
-                            },
-                            enabled = !isProfileLoading
+                                editUsername = profile?.username ?: "Student"
+                                editBio = profile?.bio ?: ""
+                                showEditProfileDialog = true
+                            }
                         ) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Profile", tint = if (isProfileLoading) Color(0xFF64748B) else Color(0xFF38BDF8))
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Profile", tint = Color(0xFF38BDF8))
                         }
                     }
                 }
@@ -152,28 +137,6 @@ fun SettingsScreen(
                     value = "Version 1.0.0",
                     onClick = { Toast.makeText(context, "EduPath AI • Powered by Gemini AI", Toast.LENGTH_SHORT).show() }
                 )
-            }
-
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                        .clickable { onLoggedOut() }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color(0xFFEF4444))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Sign Out", fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
-                    }
-                }
             }
         }
 
@@ -206,27 +169,20 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             coroutineScope.launch {
-                                try {
-                                    val currentUserId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: userId
-                                    val safeEmail = SupabaseProvider.client.auth.currentUserOrNull()?.email
-                                        ?: profile?.email
-                                        ?: ""
-
-                                    val updated = ProfileModel(
-                                        id = currentUserId,
-                                        username = editUsername.trim().ifBlank { profile?.username ?: "Student" },
-                                        email = safeEmail,
-                                        bio = editBio.trim()
-                                    )
-                                    withContext(Dispatchers.IO) {
+                                val updated = ProfileModel(
+                                    id = userId,
+                                    username = editUsername.trim().ifBlank { "Student" },
+                                    email = profile?.email ?: "student@edupath.ai",
+                                    bio = editBio.trim()
+                                )
+                                withContext(Dispatchers.IO) {
+                                    try {
                                         SupabaseProvider.client.from("profiles").upsert(updated)
-                                    }
-                                    profile = updated
-                                    showEditProfileDialog = false
-                                    Toast.makeText(context, "Profile updated!", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    } catch (_: Exception) {}
                                 }
+                                profile = updated
+                                showEditProfileDialog = false
+                                Toast.makeText(context, "Profile updated!", Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))

@@ -54,15 +54,16 @@ fun ChatScreen(
 
     var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
     DisposableEffect(context) {
-        val tts = TextToSpeech(context) { status ->
+        var ttsInstance: TextToSpeech? = null
+        ttsInstance = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                textToSpeech?.language = Locale.getDefault()
+                ttsInstance?.language = Locale.US
             }
         }
-        textToSpeech = tts
+        textToSpeech = ttsInstance
         onDispose {
-            tts.stop()
-            tts.shutdown()
+            ttsInstance.stop()
+            ttsInstance.shutdown()
         }
     }
 
@@ -197,7 +198,7 @@ fun ChatScreen(
                     ChatMessageBubble(
                         message = message,
                         onSpeakText = { text ->
-                            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+                            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UTTERANCE_ID_${System.currentTimeMillis()}")
                         },
                         onSaveToNote = { content ->
                             selectedNoteContent = content
@@ -242,7 +243,6 @@ fun ChatScreen(
                 }
             }
 
-            // Floating, compact, non-edge-attached Input Bar
             Surface(
                 color = Color(0xFF131C2E),
                 shape = RoundedCornerShape(28.dp),

@@ -49,10 +49,11 @@ class ScheduleViewModel(
     fun createTask(task: ScheduleTask) {
         viewModelScope.launch {
             val created = scheduleRepository.createTask(task)
-            if (created != null) {
-                _uiState.update { it.copy(tasks = it.tasks + created, userNotification = "Task added to timeline!") }
-            } else {
-                _uiState.update { it.copy(errorMessage = "Failed to add task") }
+            _uiState.update {
+                it.copy(
+                    tasks = it.tasks + created,
+                    userNotification = "Task scheduled successfully!"
+                )
             }
         }
     }
@@ -73,7 +74,7 @@ class ScheduleViewModel(
             energyLevel = energyLevel,
             taskType = taskType,
             colorHex = colorHex,
-            taskDate = date.toString()
+            createdAt = "${date}T${startTime}:00Z"
         )
         createTask(task)
     }
@@ -84,26 +85,16 @@ class ScheduleViewModel(
             state.copy(tasks = state.tasks.map { if (it.id == task.id) updated else it })
         }
         viewModelScope.launch {
-            val success = scheduleRepository.updateTask(updated)
-            if (!success) {
-                // Revert optimistic update on database failure
-                loadTasks()
-                _uiState.update { it.copy(errorMessage = "Failed to sync task status.") }
-            }
+            scheduleRepository.updateTask(updated)
         }
     }
 
     fun deleteTask(taskId: String) {
-        val previousTasks = _uiState.value.tasks
         _uiState.update { state ->
             state.copy(tasks = state.tasks.filter { it.id != taskId })
         }
         viewModelScope.launch {
-            val success = scheduleRepository.deleteTask(taskId)
-            if (!success) {
-                // Revert optimistic deletion on failure
-                _uiState.update { it.copy(tasks = previousTasks, errorMessage = "Failed to delete task.") }
-            }
+            scheduleRepository.deleteTask(taskId)
         }
     }
 

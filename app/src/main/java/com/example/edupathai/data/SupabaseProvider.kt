@@ -1,20 +1,30 @@
 package com.example.edupathai.data
 
+import com.example.edupathai.BuildConfig
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.gotrue.Auth
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.Postgrest
-import io.github.jan.supabase.postgrest.postgrest
 
 object SupabaseProvider {
-    val client = createSupabaseClient(
-        supabaseUrl = "https://fixaptybdongpdlpkgqx.supabase.co",
-        supabaseKey = "sb_publishable_XsYujpkP0jyfomXakDheiQ_eOCkCOIN"
-    ) {
-        install(Auth)
-        install(Postgrest)
+    val client by lazy {
+        createSupabaseClient(
+            supabaseUrl = BuildConfig.SUPABASE_URL,
+            supabaseKey = BuildConfig.SUPABASE_ANON_KEY
+        ) {
+            install(Auth)
+            install(Postgrest)
+        }
     }
 
-    val auth get() = client.auth
-    val db get() = client.postgrest
+    /**
+     * Returns the active user ID if signed in, or a stable default ID for local/offline mode.
+     */
+    fun getLocalUserId(): String {
+        return try {
+            client.auth.currentUserOrNull()?.id ?: "00000000-0000-0000-0000-000000000001"
+        } catch (_: Exception) {
+            "00000000-0000-0000-0000-000000000001"
+        }
+    }
 }

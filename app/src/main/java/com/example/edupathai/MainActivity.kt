@@ -1,29 +1,16 @@
 package com.example.edupathai
 
-import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.edupathai.data.ProfileModel
 import com.example.edupathai.data.SupabaseProvider
 import com.example.edupathai.ui.DashboardScreen
-import com.example.edupathai.ui.LoginScreen
 import com.example.edupathai.ui.SettingsScreen
 import com.example.edupathai.ui.chatbox.ChatHistoryScreen
 import com.example.edupathai.ui.chatbox.ChatHistoryViewModel
@@ -38,12 +25,6 @@ import com.example.edupathai.ui.notes.NotesViewModel
 import com.example.edupathai.ui.schedule.DailyTimelineScreen
 import com.example.edupathai.ui.schedule.ScheduleViewModel
 import com.example.edupathai.ui.theme.EduPathAITheme
-import io.github.jan.supabase.gotrue.auth
-import io.github.jan.supabase.gotrue.providers.builtin.Email
-import io.github.jan.supabase.postgrest.from
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,15 +39,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainAppNavigator() {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
-
-    var isLoggedIn by rememberSaveable { mutableStateOf(false) }
-    var isCheckingAuth by rememberSaveable { mutableStateOf(true) }
-    var needsProfileSetup by rememberSaveable { mutableStateOf(false) }
-
-    var currentUserId by rememberSaveable { mutableStateOf("") }
+    val currentUserId = remember { SupabaseProvider.getLocalUserId() }
     var currentDestination by remember { mutableStateOf(AppDestination.DASHBOARD) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showChatHistory by rememberSaveable { mutableStateOf(false) }
@@ -76,114 +49,11 @@ fun MainAppNavigator() {
     var selectedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSessionTitle by rememberSaveable { mutableStateOf<String?>(null) }
 
-    suspend fun checkProfileAndNavigate(userId: String) {
-        currentUserId = userId
-        isLoggedIn = true
-        val profile = withContext(Dispatchers.IO) {
-            try {
-                SupabaseProvider.client.from("profiles").select {
-                    filter { eq("id", userId) }
-                }.decodeList<ProfileModel>().firstOrNull()
-            } catch (_: Exception) {
-                null
-            }
-        }
-        needsProfileSetup = profile == null || profile.username.isBlank() || profile.username == "Student"
-    }
-
-    LaunchedEffect(Unit) {
-        try {
-            var session = SupabaseProvider.client.auth.currentSessionOrNull()
-
-            if (session == null) {
-                val rememberMe = prefs.getBoolean("remember_me", false)
-                val savedEmail = prefs.getString("saved_email", "") ?: ""
-                val savedPassword = prefs.getString("saved_password", "") ?: ""
-
-                if (rememberMe && savedEmail.isNotBlank() && savedPassword.isNotBlank()) {
-                    withContext(Dispatchers.IO) {
-                        SupabaseProvider.client.auth.signInWith(Email) {
-                            this.email = savedEmail.trim()
-                            this.password = savedPassword
-                        }
-                    }
-                    session = SupabaseProvider.client.auth.currentSessionOrNull()
-                }
-            }
-
-            if (session != null) {
-                val userId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: ""
-                if (userId.isNotBlank()) {
-                    checkProfileAndNavigate(userId)
-                } else {
-                    isLoggedIn = false
-                }
-            } else {
-                isLoggedIn = false
-            }
-        } catch (_: Exception) {
-            isLoggedIn = false
-        } finally {
-            isCheckingAuth = false
-        }
-    }
-
-    if (isCheckingAuth) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF0B0F19)),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(color = Color(0xFF3B82F6))
-        }
-        return
-    }
-
-    if (!isLoggedIn) {
-        LoginScreen(
-            onLoginSuccess = {
-                coroutineScope.launch {
-                    val userId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: ""
-                    if (userId.isNotBlank()) {
-                        checkProfileAndNavigate(userId)
-                    }
-                }
-            }
-        )
-        return
-    }
-
-    if (needsProfileSetup) {
-        MandatoryProfileSetupScreen(
-            userId = currentUserId,
-            onProfileSaved = {
-                needsProfileSetup = false
-            }
-        )
-        return
-    }
-
     if (showSettings) {
         BackHandler { showSettings = false }
         SettingsScreen(
             userId = currentUserId,
-            onBack = { showSettings = false },
-            onLoggedOut = {
-                coroutineScope.launch {
-                    try {
-                        SupabaseProvider.client.auth.signOut()
-                    } catch (_: Exception) {}
-                    prefs.edit().apply {
-                        putBoolean("remember_me", false)
-                        remove("saved_email")
-                        remove("saved_password")
-                        apply()
-                    }
-                    isLoggedIn = false
-                    showSettings = false
-                }
-            }
+            onBack = { showSettings = false }
         )
         return
     }
@@ -210,7 +80,6 @@ fun MainAppNavigator() {
         return
     }
 
-    // Intercept back button from other tabs to return to Dashboard rather than closing the app
     if (currentDestination != AppDestination.DASHBOARD && activeFolderId == null) {
         BackHandler {
             currentDestination = AppDestination.DASHBOARD
@@ -273,103 +142,6 @@ fun MainAppNavigator() {
                     viewModel = scheduleViewModel,
                     onNavigateBack = { currentDestination = AppDestination.DASHBOARD }
                 )
-            }
-        }
-    }
-}
-
-@Composable
-fun MandatoryProfileSetupScreen(
-    userId: String,
-    onProfileSaved: () -> Unit
-) {
-    val coroutineScope = rememberCoroutineScope()
-    var usernameInput by remember { mutableStateOf("") }
-    var bioInput by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0B0F19))
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
-            modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Welcome! Set Up Your Profile",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = "Please enter your username and academic details before continuing.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF94A3B8),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-
-                OutlinedTextField(
-                    value = usernameInput,
-                    onValueChange = { usernameInput = it },
-                    label = { Text("Username *") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = bioInput,
-                    onValueChange = { bioInput = it },
-                    label = { Text("Academic Major / Bio") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Button(
-                    onClick = {
-                        if (usernameInput.isBlank()) return@Button
-                        isLoading = true
-                        coroutineScope.launch {
-                            try {
-                                val email = SupabaseProvider.client.auth.currentUserOrNull()?.email ?: ""
-                                val profile = ProfileModel(
-                                    id = userId,
-                                    username = usernameInput.trim(),
-                                    email = email,
-                                    bio = bioInput.trim()
-                                )
-                                withContext(Dispatchers.IO) {
-                                    SupabaseProvider.client.from("profiles").upsert(profile)
-                                }
-                                onProfileSaved()
-                            } catch (_: Exception) {
-                            } finally {
-                                isLoading = false
-                            }
-                        }
-                    },
-                    enabled = !isLoading && usernameInput.isNotBlank(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                    } else {
-                        Text("Save & Continue", fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                }
             }
         }
     }
