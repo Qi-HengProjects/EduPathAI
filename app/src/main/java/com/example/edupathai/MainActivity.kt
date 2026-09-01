@@ -62,6 +62,7 @@ fun MainAppNavigator() {
     var currentUserId by rememberSaveable { mutableStateOf("") }
 
     val scheduleViewModel: ScheduleViewModel = viewModel()
+    val chatViewModel: ChatViewModel = viewModel()
 
     var currentDestination by remember { mutableStateOf(AppDestination.DASHBOARD) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -69,10 +70,7 @@ fun MainAppNavigator() {
 
     var activeFolderId by rememberSaveable { mutableStateOf<String?>(null) }
     var activeFolderName by rememberSaveable { mutableStateOf("") }
-    var selectedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedSessionTitle by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Check Auth State on launch
     LaunchedEffect(Unit) {
         try {
             var session = SupabaseProvider.client.auth.currentSessionOrNull()
@@ -80,7 +78,6 @@ fun MainAppNavigator() {
             val savedEmail = prefs.getString("saved_email", "") ?: ""
             val savedPassword = prefs.getString("saved_password", "") ?: ""
 
-            // Auto-login only if remember_me is enabled with valid saved credentials
             if (session == null && rememberMe && savedEmail.isNotBlank() && savedPassword.isNotBlank()) {
                 withContext(Dispatchers.IO) {
                     try {
@@ -142,7 +139,6 @@ fun MainAppNavigator() {
                             SupabaseProvider.client.auth.signOut()
                         } catch (_: Exception) {}
                     }
-                    // Explicitly wipe remembered credentials
                     prefs.edit().apply {
                         putBoolean("remember_me", false)
                         remove("saved_email")
@@ -165,14 +161,12 @@ fun MainAppNavigator() {
             viewModel = historyViewModel,
             onNavigateBack = { showChatHistory = false },
             onSessionClick = { sessionId: String, title: String ->
-                selectedSessionId = sessionId
-                selectedSessionTitle = title
+                chatViewModel.selectSession(sessionId, title)
                 showChatHistory = false
                 currentDestination = AppDestination.CHAT
             },
             onStartNewChat = {
-                selectedSessionId = null
-                selectedSessionTitle = null
+                chatViewModel.createNewSession()
                 showChatHistory = false
                 currentDestination = AppDestination.CHAT
             }
@@ -229,12 +223,9 @@ fun MainAppNavigator() {
                 }
             }
             AppDestination.CHAT -> {
-                val chatViewModel: ChatViewModel = viewModel()
                 ChatScreen(
                     viewModel = chatViewModel,
-                    onNavigateToHistory = { showChatHistory = true },
-                    initialSessionId = selectedSessionId,
-                    initialSessionTitle = selectedSessionTitle
+                    onNavigateToHistory = { showChatHistory = true }
                 )
             }
             AppDestination.SCHEDULE -> {

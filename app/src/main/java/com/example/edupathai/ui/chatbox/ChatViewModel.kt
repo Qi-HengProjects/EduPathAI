@@ -32,6 +32,9 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    // Persistent in-memory transcript cache by session ID
+    private val sessionMessagesCache = mutableMapOf<String, MutableList<ChatMessage>>()
+
     init {
         loadLatestSession()
     }
@@ -53,21 +56,31 @@ class ChatViewModel(
             createNewSession()
             return
         }
+
+        // 1. Immediately restore cached conversation if present
+        val cached = sessionMessagesCache[sessionId] ?: mutableListOf()
+        _uiState.update {
+            it.copy(
+                currentSessionId = sessionId,
+                currentSessionTitle = title,
+                messages = cached.toList(),
+                isLoading = cached.isEmpty()
+            )
+        }
+
+        // 2. Query Supabase in background to sync any updates
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    currentSessionId = sessionId,
-                    currentSessionTitle = title,
-                    messages = emptyList(),
-                    isLoading = true
-                )
-            }
-            val msgs = chatRepository.getMessages(sessionId)
-            _uiState.update {
-                it.copy(
-                    messages = msgs,
-                    isLoading = false
-                )
+            val remoteMsgs = chatRepository.getMessages(sessionId)
+            if (remoteMsgs.isNotEmpty()) {
+                sessionMessagesCache[sessionId] = remoteMsgs.toMutableList()
+                _uiState.update {
+                    it.copy(
+                        messages = remoteMsgs,
+                        isLoading = false
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
@@ -75,9 +88,11 @@ class ChatViewModel(
     fun createNewSession() {
         viewModelScope.launch {
             val newSession = chatRepository.createSession("New Conversation")
+            val sId = newSession.id ?: UUID.randomUUID().toString()
+            sessionMessagesCache[sId] = mutableListOf()
             _uiState.update {
                 it.copy(
-                    currentSessionId = newSession.id,
+                    currentSessionId = sId,
                     currentSessionTitle = newSession.title,
                     messages = emptyList(),
                     userInput = ""
@@ -96,10 +111,13 @@ class ChatViewModel(
 
         viewModelScope.launch {
             var sId = _uiState.value.currentSessionId
+            var isBrandNewSession = false
+
             if (sId.isNullOrBlank() || sId == "NEW") {
                 val smartTitle = if (query.length > 28) query.take(25).trim() + "..." else query.trim()
                 val createdSession = chatRepository.createSession(smartTitle)
                 sId = createdSession.id ?: UUID.randomUUID().toString()
+                isBrandNewSession = true
                 _uiState.update {
                     it.copy(
                         currentSessionId = sId,
@@ -116,16 +134,22 @@ class ChatViewModel(
                 createdAt = Instant.now().toString()
             )
 
+            // Cache immediately in local session memory
+            val cacheList = sessionMessagesCache.getOrPut(sId) { mutableListOf() }
+            cacheList.add(userMessage)
+
             _uiState.update {
                 it.copy(
-                    messages = it.messages + userMessage,
+                    messages = cacheList.toList(),
                     userInput = "",
                     isLoading = true
                 )
             }
 
+            // Persist user message to Supabase
             chatRepository.sendMessage(userMessage)
 
+            // Fetch AI completion from Gemini
             val reply = GeminiService.sendChatMessage(_uiState.value.messages, query)
 
             val aiMessage = ChatMessage(
@@ -136,10 +160,14 @@ class ChatViewModel(
                 createdAt = Instant.now().toString()
             )
 
+            cacheList.add(aiMessage)
+
+            // Persist AI message to Supabase
             chatRepository.sendMessage(aiMessage)
 
+            // Smart title rename if needed
             val currentTitle = _uiState.value.currentSessionTitle
-            if (currentTitle == "New Conversation" || currentTitle == "AI Study Assistant" || currentTitle.isBlank()) {
+            if (isBrandNewSession || currentTitle == "New Conversation" || currentTitle == "AI Study Assistant") {
                 val smartTitle = if (query.length > 28) query.take(25).trim() + "..." else query.trim()
                 chatRepository.renameSession(sId, smartTitle)
                 _uiState.update { it.copy(currentSessionTitle = smartTitle) }
@@ -147,7 +175,7 @@ class ChatViewModel(
 
             _uiState.update {
                 it.copy(
-                    messages = it.messages + aiMessage,
+                    messages = cacheList.toList(),
                     isLoading = false
                 )
             }
