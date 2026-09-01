@@ -1,34 +1,34 @@
 package com.example.edupathai.ui.notes
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.edupathai.data.AiIslandMode
+import androidx.compose.ui.unit.sp
 import com.example.edupathai.data.Flashcard
 import com.example.edupathai.data.MindmapData
 import com.example.edupathai.data.QuizQuestion
@@ -43,13 +43,8 @@ fun NotebookWorkspaceScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    BackHandler {
-        viewModel.saveCurrentNote()
-        onNavigateBack()
-    }
-
-    LaunchedEffect(uiState.userNotification) {
-        uiState.userNotification?.let {
+    LaunchedEffect(uiState.notificationMessage) {
+        uiState.notificationMessage?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             viewModel.clearNotification()
         }
@@ -57,852 +52,583 @@ fun NotebookWorkspaceScreen(
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
-            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             viewModel.clearNotification()
         }
     }
 
     Scaffold(
+        containerColor = Color(0xFF0B0F19),
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = subjectName.ifBlank { "Subject Workspace" },
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1
-                        )
-                        Text(
-                            text = "${uiState.notes.size} note entries",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF131C2E)),
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        viewModel.saveCurrentNote()
-                        onNavigateBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                title = {
+                    Column {
+                        Text(subjectName, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                        Text("${uiState.notes.size} note entries", fontSize = 12.sp, color = Color(0xFF94A3B8))
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.createNewNote() }) {
-                        Icon(
-                            imageVector = Icons.Default.NoteAdd,
-                            contentDescription = "New Note",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        Icon(Icons.Default.NoteAdd, contentDescription = "New Note", tint = Color(0xFF60A5FA))
                     }
                     IconButton(onClick = { viewModel.saveCurrentNote() }) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Save Note",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        Icon(Icons.Default.Check, contentDescription = "Save Note", tint = Color(0xFF34D399))
                     }
-                    if (uiState.currentNote?.id != null) {
-                        IconButton(onClick = { viewModel.deleteCurrentNote() }) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteOutline,
-                                contentDescription = "Delete Note",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
+                    IconButton(onClick = { viewModel.deleteCurrentNote() }) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Note", tint = Color(0xFFEF4444))
                     }
                 }
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .background(Color(0xFF0B0F19))
         ) {
-            if (uiState.notes.isNotEmpty()) {
-                LazyRow(
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 1. Note Tabs Row
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(uiState.notes, key = { it.id ?: it.title }) { note ->
-                        val isSelected = uiState.currentNote?.id == note.id
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { viewModel.selectNote(note) },
-                            label = {
+                    Button(
+                        onClick = { viewModel.createNewNote() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("New Note", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    uiState.notes.forEach { note ->
+                        val isSelected = note.id == uiState.selectedNoteId
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF131C2E),
+                            border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
+                            modifier = Modifier.clickable { note.id?.let { viewModel.selectNote(it) } }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = note.title.ifBlank { "Untitled" },
+                                    color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                            },
-                            leadingIcon = {
-                                if (isSelected) {
-                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-
-            Surface(
-                tonalElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    item {
-                        AssistChip(
-                            onClick = { viewModel.generateSimplifiedNotes() },
-                            label = { Text("Simplify") },
-                            leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (uiState.aiMode == AiIslandMode.SIMPLIFY) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                            )
-                        )
-                    }
-                    item {
-                        AssistChip(
-                            onClick = { viewModel.generateFlashcards() },
-                            label = { Text("Cards") },
-                            leadingIcon = { Icon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (uiState.aiMode == AiIslandMode.FLASHCARDS) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                            )
-                        )
-                    }
-                    item {
-                        AssistChip(
-                            onClick = { viewModel.generateMindmap() },
-                            label = { Text("Mindmap") },
-                            leadingIcon = { Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (uiState.aiMode == AiIslandMode.MINDMAP) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                            )
-                        )
-                    }
-                    item {
-                        AssistChip(
-                            onClick = { viewModel.generateQuiz() },
-                            label = { Text("Quiz") },
-                            leadingIcon = { Icon(Icons.Default.Quiz, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (uiState.aiMode == AiIslandMode.QUIZ) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                            )
-                        )
-                    }
-                }
-            }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 12.dp)
-            ) {
-                if (uiState.aiMode != AiIslandMode.NONE) {
-                    item {
-                        AiWorkspaceIsland(
-                            uiState = uiState,
-                            viewModel = viewModel
-                        )
-                    }
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = uiState.noteTitle,
-                        onValueChange = { newTitle ->
-                            viewModel.updateTitle(newTitle)
-                        },
-                        placeholder = { Text("Note Title...") },
-                        textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = uiState.noteContent,
-                        onValueChange = { newContent ->
-                            viewModel.updateContent(newContent)
-                        },
-                        placeholder = { Text("Write your notes, lecture summaries, or formulas here...") },
-                        minLines = 14,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight()
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AiWorkspaceIsland(
-    uiState: NoteDetailUiState,
-    viewModel: NoteDetailViewModel
-) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            if (uiState.isAiProcessing) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("AI is processing notes...", style = MaterialTheme.typography.bodyMedium)
-                }
-            } else {
-                when (uiState.aiMode) {
-                    AiIslandMode.SIMPLIFY -> {
-                        SimplifyView(
-                            text = uiState.simplifiedText ?: "No summary available.",
-                            onRegenerate = { viewModel.generateSimplifiedNotes(forceRegenerate = true) },
-                            onAppendToNote = { viewModel.appendSummaryToNoteContent() },
-                            onSchedule = { viewModel.scheduleNoteTask("Review Simplified") },
-                            onDismiss = { viewModel.dismissAiIsland() }
-                        )
-                    }
-                    AiIslandMode.FLASHCARDS -> {
-                        FlashcardsView(
-                            flashcards = uiState.flashcards,
-                            onRegenerate = { viewModel.generateFlashcards(forceRegenerate = true) },
-                            onSchedule = { viewModel.scheduleNoteTask("Practice Flashcards") },
-                            onDismiss = { viewModel.dismissAiIsland() }
-                        )
-                    }
-                    AiIslandMode.MINDMAP -> {
-                        uiState.mindmapData?.let { mindmap ->
-                            VisualMindmapCard(
-                                mindmapData = mindmap,
-                                onSchedule = { viewModel.scheduleNoteTask("Review Mindmap") },
-                                onDelete = { viewModel.dismissAiIsland() }
-                            )
-                        }
-                    }
-                    AiIslandMode.QUIZ -> {
-                        InteractiveQuizCard(
-                            questions = uiState.quizQuestions,
-                            currentIndex = uiState.currentQuizIndex,
-                            selectedAnswer = uiState.selectedQuizAnswer,
-                            isSubmitted = uiState.isAnswerSubmitted,
-                            score = uiState.quizScore,
-                            isFinished = uiState.isQuizFinished,
-                            onSelectOption = { answer ->
-                                viewModel.selectQuizAnswer(answer)
-                                viewModel.submitQuizAnswer()
-                            },
-                            onNext = { viewModel.nextQuizQuestion() },
-                            onReset = { viewModel.resetQuiz() },
-                            onSchedule = { viewModel.scheduleNoteTask("Practice Quiz") },
-                            onDismiss = { viewModel.dismissAiIsland() }
-                        )
-                    }
-                    AiIslandMode.NONE -> {}
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SimplifyView(
-    text: String,
-    onRegenerate: () -> Unit,
-    onAppendToNote: () -> Unit,
-    onSchedule: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("AI Summary", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                IconButton(onClick = onRegenerate, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(16.dp))
-                }
-                FilledTonalButton(onClick = onAppendToNote, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
-                    Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Save to Note", style = MaterialTheme.typography.labelSmall)
-                }
-                FilledTonalButton(onClick = onSchedule, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
-                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Schedule", style = MaterialTheme.typography.labelSmall)
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(text = text, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
-fun InteractiveQuizCard(
-    questions: List<QuizQuestion>,
-    currentIndex: Int,
-    selectedAnswer: String?,
-    isSubmitted: Boolean,
-    score: Int,
-    isFinished: Boolean,
-    onSelectOption: (String) -> Unit,
-    onNext: () -> Unit,
-    onReset: () -> Unit,
-    onSchedule: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    if (questions.isEmpty()) {
-        Text("No quiz questions generated. Write more notes and tap Quiz again.")
-        return
-    }
-
-    if (isFinished) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.EmojiEvents,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
-            )
-            Text(
-                text = "Quiz Completed!",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Your Score: $score / ${questions.size}",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.ExtraBold,
-                color = if (score >= (questions.size + 1) / 2) Color(0xFF10B981) else Color(0xFFEF4444)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onReset,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Retake")
-                }
-                Button(
-                    onClick = onSchedule,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Schedule")
-                }
-            }
-        }
-        return
-    }
-
-    val currentQ = questions.getOrNull(currentIndex) ?: return
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Quiz,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Question ${currentIndex + 1} of ${questions.size}",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text(
-            text = currentQ.question,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            currentQ.options.forEach { option ->
-                val isSelected = selectedAnswer == option
-                val isCorrect = option.trim().equals(currentQ.correctAnswer.trim(), ignoreCase = true)
-
-                val backgroundColor = when {
-                    !isSubmitted -> if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                    isCorrect -> Color(0xFF064E3B)
-                    isSelected && !isCorrect -> Color(0xFF450A0A)
-                    else -> MaterialTheme.colorScheme.surface
-                }
-
-                val borderColor = when {
-                    !isSubmitted -> if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    isCorrect -> Color(0xFF10B981)
-                    isSelected && !isCorrect -> Color(0xFFEF4444)
-                    else -> MaterialTheme.colorScheme.outlineVariant
-                }
-
-                Card(
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = backgroundColor),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, borderColor, RoundedCornerShape(10.dp))
-                        .clickable(enabled = !isSubmitted) { onSelectOption(option) }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = option,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        if (isSubmitted) {
-                            if (isCorrect) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Correct",
-                                    tint = Color(0xFF10B981),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            } else if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Default.Cancel,
-                                    contentDescription = "Incorrect",
-                                    tint = Color(0xFFEF4444),
-                                    modifier = Modifier.size(20.dp)
-                                )
                             }
                         }
                     }
                 }
-            }
-        }
 
-        if (isSubmitted) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text(
-                        text = "Explanation:",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = currentQ.explanation.ifBlank { "Correct answer: ${currentQ.correctAnswer}" },
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
+                Spacer(modifier = Modifier.height(10.dp))
 
-            Spacer(modifier = Modifier.height(10.dp))
-            Button(
-                onClick = onNext,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (currentIndex + 1 < questions.size) "Next Question" else "View Score Results")
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
-            }
-        }
-    }
-}
-
-@Composable
-fun FlashcardsView(
-    flashcards: List<Flashcard>,
-    onRegenerate: () -> Unit,
-    onSchedule: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Style, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Flashcards (${flashcards.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onRegenerate, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(16.dp))
-                }
-                FilledTonalButton(onClick = onSchedule, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(28.dp)) {
-                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Schedule", style = MaterialTheme.typography.labelSmall)
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            flashcards.forEachIndexed { index, card ->
-                var revealed by remember { mutableStateOf(false) }
-                Card(
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                // 2. AI Action Toolbar
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { revealed = !revealed }
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "Q${index + 1}: ${card.question}",
-                            fontWeight = FontWeight.SemiBold,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        if (revealed) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "A: ${card.answer}",
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        } else {
-                            Text(
-                                text = "Tap to flip answer",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun VisualMindmapCard(
-    mindmapData: MindmapData,
-    onSchedule: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val branchColors = listOf(
-        Color(0xFF10B981) to Color(0xFF064E3B),
-        Color(0xFFA855F7) to Color(0xFF3B0764),
-        Color(0xFFF59E0B) to Color(0xFF451A03),
-        Color(0xFF06B6D4) to Color(0xFF164E63),
-        Color(0xFFEC4899) to Color(0xFF500724)
-    )
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Schema,
-                        contentDescription = null,
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Visual Mindmap Diagram",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF38BDF8)
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilledTonalButton(
-                        onClick = onSchedule,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(Icons.Default.EventAvailable, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Schedule", style = MaterialTheme.typography.labelSmall)
-                    }
-
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF1E293B), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 16.dp)
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = Color(0xFF2563EB),
-                        shadowElevation = 4.dp
-                    ) {
-                        Text(
-                            text = "🎯 ${mindmapData.rootTitle}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                    ActionChip(
+                        icon = Icons.Default.AutoAwesome,
+                        label = "Simplify",
+                        isActive = uiState.viewMode == NoteViewMode.SIMPLIFY,
+                        onClick = { viewModel.toggleViewMode(NoteViewMode.SIMPLIFY) }
+                    )
+                    ActionChip(
+                        icon = Icons.Default.Style,
+                        label = "Cards",
+                        isActive = uiState.viewMode == NoteViewMode.FLASHCARDS,
+                        onClick = { viewModel.toggleViewMode(NoteViewMode.FLASHCARDS) }
+                    )
+                    ActionChip(
+                        icon = Icons.Default.AccountTree,
+                        label = "Mindmap",
+                        isActive = uiState.viewMode == NoteViewMode.MINDMAP,
+                        onClick = { viewModel.toggleViewMode(NoteViewMode.MINDMAP) }
+                    )
+                    ActionChip(
+                        icon = Icons.Default.Quiz,
+                        label = "Quiz",
+                        isActive = uiState.viewMode == NoteViewMode.QUIZ,
+                        onClick = { viewModel.toggleViewMode(NoteViewMode.QUIZ) }
+                    )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(20.dp)
-                ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val centerX = size.width / 2f
-                        drawLine(
-                            color = Color(0xFF38BDF8),
-                            start = Offset(centerX, 0f),
-                            end = Offset(centerX, size.height),
-                            strokeWidth = 3.dp.toPx()
-                        )
-                        drawCircle(
-                            color = Color(0xFF38BDF8),
-                            radius = 4.dp.toPx(),
-                            center = Offset(centerX, size.height)
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    mindmapData.branches.forEachIndexed { index, branch ->
-                        val (accent, bg) = branchColors[index % branchColors.size]
-                        val isFirst = index == 0
-                        val isLast = index == mindmapData.branches.size - 1
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(IntrinsicSize.Min),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(28.dp)
-                                    .fillMaxHeight()
+                // 3. Main Content Area (Dynamic based on ViewMode)
+                Box(modifier = Modifier.fillMaxSize().weight(1f)) {
+                    when (uiState.viewMode) {
+                        NoteViewMode.EDITOR -> {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                OutlinedTextField(
+                                    value = uiState.noteTitle,
+                                    onValueChange = { viewModel.updateTitle(it) },
+                                    label = { Text("Note Title") },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedTextField(
+                                    value = uiState.noteContent,
+                                    onValueChange = { viewModel.updateContent(it) },
+                                    placeholder = { Text("Type or paste lecture notes, code snippets, or study material here...") },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                )
+                            }
+                        }
+                        NoteViewMode.SIMPLIFY -> {
+                            ToolContainerCard(
+                                title = "Simplified Key Takeaways",
+                                icon = Icons.Default.AutoAwesome,
+                                onRegenerate = { viewModel.generateSimplify() },
+                                onDelete = { viewModel.deleteCurrentTool() },
+                                onSchedule = { viewModel.scheduleStudySession("Review: ${uiState.noteTitle}", "09:00", "10:00", "medium", "#3B82F6") }
                             ) {
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val spineX = 10.dp.toPx()
-                                    val branchY = 22.dp.toPx()
-                                    val endX = size.width
-                                    val stroke = 2.5.dp.toPx()
-
-                                    if (!isFirst) {
-                                        drawLine(
-                                            color = Color(0xFF38BDF8),
-                                            start = Offset(spineX, 0f),
-                                            end = Offset(spineX, branchY),
-                                            strokeWidth = stroke
+                                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                    item {
+                                        Text(
+                                            text = uiState.simplifiedContent,
+                                            color = Color(0xFFE2E8F0),
+                                            fontSize = 14.sp,
+                                            lineHeight = 22.sp
                                         )
                                     }
-
-                                    if (!isLast) {
-                                        drawLine(
-                                            color = Color(0xFF38BDF8),
-                                            start = Offset(spineX, branchY),
-                                            end = Offset(spineX, size.height),
-                                            strokeWidth = stroke
-                                        )
-                                    }
-
-                                    drawLine(
-                                        color = accent,
-                                        start = Offset(spineX, branchY),
-                                        end = Offset(endX, branchY),
-                                        strokeWidth = stroke
-                                    )
-
-                                    drawCircle(
-                                        color = accent,
-                                        radius = 4.dp.toPx(),
-                                        center = Offset(spineX, branchY)
-                                    )
-
-                                    drawCircle(
-                                        color = accent,
-                                        radius = 3.dp.toPx(),
-                                        center = Offset(endX, branchY)
-                                    )
                                 }
                             }
-
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = bg.copy(alpha = 0.65f)),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(bottom = if (isLast) 0.dp else 12.dp)
-                                    .border(1.dp, accent.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        }
+                        NoteViewMode.FLASHCARDS -> {
+                            ToolContainerCard(
+                                title = "Study Flashcards (${uiState.flashcards.size})",
+                                icon = Icons.Default.Style,
+                                onRegenerate = { viewModel.generateFlashcards() },
+                                onDelete = { viewModel.deleteCurrentTool() },
+                                onSchedule = { viewModel.scheduleStudySession("Flashcards: ${uiState.noteTitle}", "14:00", "15:00", "high", "#EF4444") }
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(accent)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = branch.title,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = accent
-                                        )
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    itemsIndexed(uiState.flashcards) { index, card ->
+                                        FlashcardItemView(index = index + 1, card = card)
                                     }
-
-                                    if (branch.subItems.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.height(10.dp))
-                                        FlowRow(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            branch.subItems.forEach { subItem ->
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = Color(0xFF0F172A).copy(alpha = 0.9f),
-                                                    border = androidx.compose.foundation.BorderStroke(
-                                                        0.5.dp,
-                                                        accent.copy(alpha = 0.35f)
-                                                    )
-                                                ) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = "•",
-                                                            color = accent,
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text(
-                                                            text = subItem,
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = Color(0xFFCBD5E1)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
+                                }
+                            }
+                        }
+                        NoteViewMode.MINDMAP -> {
+                            ToolContainerCard(
+                                title = "Visual Mindmap Diagram",
+                                icon = Icons.Default.AccountTree,
+                                onRegenerate = { viewModel.generateMindmap() },
+                                onDelete = { viewModel.deleteCurrentTool() },
+                                onSchedule = { viewModel.scheduleStudySession("Mindmap Review: ${uiState.noteTitle}", "19:00", "20:00", "medium", "#3B82F6") }
+                            ) {
+                                uiState.mindmap?.let { mapData ->
+                                    MindmapDiagramView(data = mapData)
+                                } ?: Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text("No mindmap generated yet.", color = Color(0xFF64748B))
+                                }
+                            }
+                        }
+                        NoteViewMode.QUIZ -> {
+                            ToolContainerCard(
+                                title = "Knowledge Check Quiz",
+                                icon = Icons.Default.Quiz,
+                                onRegenerate = { viewModel.generateQuiz() },
+                                onDelete = { viewModel.deleteCurrentTool() },
+                                onSchedule = { viewModel.scheduleStudySession("Quiz: ${uiState.noteTitle}", "20:00", "21:00", "high", "#10B981") }
+                            ) {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    itemsIndexed(uiState.quiz) { index, q ->
+                                        QuizQuestionItemView(index = index + 1, question = q)
                                     }
                                 }
                             }
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            // Loading overlay
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.65f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFF3B82F6))
+                            Text(
+                                text = uiState.loadingMessage,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    isActive: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isActive) Color(0xFF3B82F6).copy(alpha = 0.25f) else Color(0xFF131C2E),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isActive) Color(0xFF3B82F6) else Color(0xFF1E293B)),
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = if (isActive) Color(0xFF60A5FA) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(label, color = if (isActive) Color.White else Color(0xFF94A3B8), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun ToolContainerCard(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onRegenerate: () -> Unit,
+    onDelete: () -> Unit,
+    onSchedule: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
+        modifier = Modifier
+            .fillMaxSize()
+            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(icon, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(title, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8), fontSize = 15.sp)
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = onSchedule,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = "Schedule", modifier = Modifier.size(14.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Schedule", fontSize = 11.sp, color = Color.White)
+                    }
+
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(modifier = Modifier.fillMaxSize().weight(1f)) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+fun FlashcardItemView(index: Int, card: Flashcard) {
+    var isRevealed by rememberSaveable { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0B0F19)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
+            .clickable { isRevealed = !isRevealed }
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text("Q$index: ${card.question}", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            if (isRevealed) {
+                Surface(
+                    color = Color(0xFF10B981).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Answer: ${card.answer}",
+                        color = Color(0xFF34D399),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            } else {
+                Text("Tap to reveal answer", color = Color(0xFF64748B), fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun MindmapDiagramView(data: MindmapData) {
+    val branchColors = listOf(
+        Color(0xFF10B981), // Emerald
+        Color(0xFF8B5CF6), // Purple
+        Color(0xFFF59E0B), // Amber
+        Color(0xFF3B82F6), // Blue
+        Color(0xFFEC4899)  // Pink
+    )
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        // Root Node Header
+        item {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    color = Color(0xFF2563EB),
+                    shape = RoundedCornerShape(20.dp),
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🎯", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = data.rootTitle,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Branch Nodes
+        itemsIndexed(data.branches) { index, branch ->
+            val branchColor = branchColors[index % branchColors.size]
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                // Vertical connecting indicator line
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.width(28.dp).padding(top = 8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(branchColor)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(2.dp)
+                            .height(60.dp)
+                            .background(branchColor.copy(alpha = 0.4f))
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = branchColor.copy(alpha = 0.12f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, branchColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(branchColor)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = branch.title,
+                                fontWeight = FontWeight.Bold,
+                                color = branchColor,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        if (branch.subItems.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                branch.subItems.forEach { sub ->
+                                    Surface(
+                                        color = Color(0xFF0B0F19).copy(alpha = 0.7f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "• $sub",
+                                            color = Color(0xFFE2E8F0),
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun QuizQuestionItemView(index: Int, question: QuizQuestion) {
+    var selectedOption by rememberSaveable { mutableStateOf<String?>(null) }
+    var isSubmitted by rememberSaveable { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0B0F19)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text("$index. ${question.question}", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                question.options.forEach { opt ->
+                    val isCorrect = opt == question.correctAnswer
+                    val isChosen = opt == selectedOption
+
+                    val optBgColor = when {
+                        !isSubmitted && isChosen -> Color(0xFF3B82F6).copy(alpha = 0.25f)
+                        isSubmitted && isCorrect -> Color(0xFF10B981).copy(alpha = 0.25f)
+                        isSubmitted && isChosen && !isCorrect -> Color(0xFFEF4444).copy(alpha = 0.25f)
+                        else -> Color(0xFF131C2E)
+                    }
+
+                    val optBorderColor = when {
+                        !isSubmitted && isChosen -> Color(0xFF3B82F6)
+                        isSubmitted && isCorrect -> Color(0xFF10B981)
+                        isSubmitted && isChosen && !isCorrect -> Color(0xFFEF4444)
+                        else -> Color(0xFF1E293B)
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = optBgColor,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, optBorderColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isSubmitted) { selectedOption = opt }
+                    ) {
+                        Text(
+                            text = opt,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            }
+
+            if (selectedOption != null && !isSubmitted) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = { isSubmitted = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Check Answer", fontSize = 12.sp)
+                }
+            }
+
+            if (isSubmitted && question.explanation.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Explanation: ${question.explanation}",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp
+                )
             }
         }
     }

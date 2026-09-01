@@ -8,47 +8,34 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
+import java.util.UUID
 
-data class NoteAiCache(
-    val simplifiedText: String? = null,
-    val flashcards: List<Flashcard> = emptyList(),
-    val mindmapData: MindmapData? = null,
-    val quizQuestions: List<QuizQuestion> = emptyList()
-)
+enum class NoteViewMode {
+    EDITOR, SIMPLIFY, FLASHCARDS, MINDMAP, QUIZ
+}
 
 data class NoteDetailUiState(
     val notes: List<Note> = emptyList(),
-    val currentNote: Note? = null,
-    val currentNoteIndex: Int = 0,
+    val selectedNoteId: String? = null,
     val noteTitle: String = "",
     val noteContent: String = "",
-    val isLoading: Boolean = false,
-    val isSaving: Boolean = false,
-    val isAiProcessing: Boolean = false,
-    val aiMode: AiIslandMode = AiIslandMode.NONE,
-    val simplifiedText: String? = null,
+    val viewMode: NoteViewMode = NoteViewMode.EDITOR,
+    val simplifiedContent: String = "",
     val flashcards: List<Flashcard> = emptyList(),
-    val currentFlashcardIndex: Int = 0,
-    val isFlashcardFlipped: Boolean = false,
-    val mindmapData: MindmapData? = null,
     val mindmap: MindmapData? = null,
-    val quizQuestions: List<QuizQuestion> = emptyList(),
-    val currentQuizIndex: Int = 0,
-    val selectedQuizAnswer: String? = null,
-    val selectedQuizOption: Int? = null,
-    val isAnswerSubmitted: Boolean = false,
-    val quizScore: Int = 0,
-    val isQuizFinished: Boolean = false,
-    val userNotification: String? = null,
-    val errorMessage: String? = null,
-    val feedbackMessage: String? = null
+    val quiz: List<QuizQuestion> = emptyList(),
+    val isLoading: Boolean = false,
+    val loadingMessage: String = "",
+    val notificationMessage: String? = null,
+    val errorMessage: String? = null
 )
 
 class NoteDetailViewModel(
-    private val folderId: String = "",
+    private val folderId: String,
     private val noteRepository: NoteRepository = NoteRepository(),
     private val scheduleRepository: ScheduleRepository = ScheduleRepository()
 ) : ViewModel() {
@@ -56,446 +43,348 @@ class NoteDetailViewModel(
     private val _uiState = MutableStateFlow(NoteDetailUiState())
     val uiState: StateFlow<NoteDetailUiState> = _uiState.asStateFlow()
 
-    private val noteAiCacheMap = mutableMapOf<String, NoteAiCache>()
-
     init {
         loadNotes()
     }
 
-    private fun getActiveCacheKey(): String {
-        return _uiState.value.currentNote?.id ?: _uiState.value.noteTitle.ifBlank { "default_note" }
-    }
-
-    private fun updateActiveCache(updater: (NoteAiCache) -> NoteAiCache) {
-        val key = getActiveCacheKey()
-        val current = noteAiCacheMap[key] ?: NoteAiCache()
-        noteAiCacheMap[key] = updater(current)
-    }
-
     fun loadNotes() {
-        if (folderId.isBlank()) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            try {
-                val list = noteRepository.getNotesForFolder(folderId)
-                if (list.isNotEmpty()) {
-                    val first = list.first()
-                    val cached = noteAiCacheMap[first.id ?: first.title]
-                    _uiState.update {
-                        it.copy(
-                            notes = list,
-                            currentNote = first,
-                            currentNoteIndex = 0,
-                            noteTitle = first.title,
-                            noteContent = first.content,
-                            simplifiedText = cached?.simplifiedText,
-                            flashcards = cached?.flashcards ?: emptyList(),
-                            mindmapData = cached?.mindmapData,
-                            quizQuestions = cached?.quizQuestions ?: emptyList(),
-                            isLoading = false
-                        )
-                    }
-                } else {
-                    val created = noteRepository.createNote(folderId = folderId, title = "Untitled Note", content = "")
-                    _uiState.update {
-                        it.copy(
-                            notes = listOf(created),
-                            currentNote = created,
-                            currentNoteIndex = 0,
-                            noteTitle = created.title,
-                            noteContent = created.content,
-                            isLoading = false
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Error loading notes: ${e.message}") }
+            _uiState.update { it.copy(isLoading = true, loadingMessage = "Loading notes...") }
+            val notesList = noteRepository.getNotesByFolder(folderId)
+
+            if (notesList.isNotEmpty()) {
+                val currentSelectedId = _uiState.value.selectedNoteId
+                val targetNote = notesList.find { it.id == currentSelectedId } ?: notesList.first()
+                applyNoteToState(targetNote, notesList)
+            } else {
+                val newNote = Note(
+                    id = UUID.randomUUID().toString(),
+                    folderId = folderId,
+                    title = "New Note",
+                    content = "",
+                    createdAt = Instant.now().toString()
+                )
+                noteRepository.saveNote(newNote)
+                applyNoteToState(newNote, listOf(newNote))
             }
         }
     }
 
-    fun updateTitle(newTitle: String) {
-        _uiState.update { state ->
-            val updatedCurrent = state.currentNote?.copy(title = newTitle)
-            val updatedList = state.notes.map { note ->
-                if (note.id == state.currentNote?.id) note.copy(title = newTitle) else note
-            }
-            state.copy(
-                noteTitle = newTitle,
-                currentNote = updatedCurrent,
-                notes = updatedList
-            )
-        }
-    }
-
-    fun updateContent(newContent: String) {
-        _uiState.update { state ->
-            val updatedCurrent = state.currentNote?.copy(content = newContent)
-            val updatedList = state.notes.map { note ->
-                if (note.id == state.currentNote?.id) note.copy(content = newContent) else note
-            }
-            state.copy(
-                noteContent = newContent,
-                currentNote = updatedCurrent,
-                notes = updatedList
-            )
-        }
-    }
-
-    fun updateCurrentNoteContent(content: String) = updateContent(content)
-
-    fun selectNote(note: Note) {
-        val currentState = _uiState.value
-        val currentActiveNote = currentState.currentNote
-
-        if (currentActiveNote?.id == note.id) return
-
-        if (currentActiveNote != null && currentActiveNote.id != null) {
-            val noteToSave = currentActiveNote.copy(
-                title = currentState.noteTitle,
-                content = currentState.noteContent
-            )
-            viewModelScope.launch {
-                noteRepository.saveNote(noteToSave)
-            }
-        }
-
-        val freshNote = currentState.notes.find { it.id == note.id } ?: note
-        val index = currentState.notes.indexOfFirst { it.id == note.id }.coerceAtLeast(0)
-        val cached = noteAiCacheMap[freshNote.id ?: freshNote.title]
-
+    private fun applyNoteToState(note: Note, notesList: List<Note>) {
         _uiState.update {
             it.copy(
-                currentNote = freshNote,
-                currentNoteIndex = index,
-                noteTitle = freshNote.title,
-                noteContent = freshNote.content,
-                simplifiedText = cached?.simplifiedText,
-                flashcards = cached?.flashcards ?: emptyList(),
-                mindmapData = cached?.mindmapData,
-                quizQuestions = cached?.quizQuestions ?: emptyList(),
-                aiMode = AiIslandMode.NONE
+                notes = notesList,
+                selectedNoteId = note.id,
+                noteTitle = note.title,
+                noteContent = note.content,
+                simplifiedContent = note.simplifiedContent,
+                flashcards = note.getFlashcards(),
+                mindmap = note.getMindmap(),
+                quiz = note.getQuiz(),
+                isLoading = false,
+                loadingMessage = ""
             )
         }
     }
 
-    fun saveCurrentNote() {
-        val state = _uiState.value
-        val current = state.currentNote ?: return
-        val noteToPersist = current.copy(
-            title = state.noteTitle.ifBlank { "Untitled Note" },
-            content = state.noteContent
-        )
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSaving = true) }
-            val saved = noteRepository.saveNote(noteToPersist)
-            _uiState.update { latest ->
-                val updatedList = latest.notes.map { if (it.id == saved.id) saved else it }
-                val isStillActive = latest.currentNote?.id == saved.id
-                latest.copy(
-                    notes = updatedList,
-                    currentNote = if (isStillActive) saved else latest.currentNote,
-                    noteTitle = if (isStillActive) saved.title else latest.noteTitle,
-                    noteContent = if (isStillActive) saved.content else latest.noteContent,
-                    isSaving = false,
-                    userNotification = "Saved successfully!"
-                )
-            }
-        }
+    fun selectNote(noteId: String) {
+        saveCurrentNote()
+        val note = _uiState.value.notes.find { it.id == noteId } ?: return
+        applyNoteToState(note, _uiState.value.notes)
     }
 
     fun createNewNote() {
-        val state = _uiState.value
-        val active = state.currentNote
-
-        if (active != null &&
-            (active.title == "Untitled Note" || active.title == "New Note") &&
-            active.content.isBlank() &&
-            state.noteTitle.isBlank() &&
-            state.noteContent.isBlank()
-        ) {
-            _uiState.update { it.copy(userNotification = "Current note is already empty.") }
-            return
+        saveCurrentNote()
+        viewModelScope.launch {
+            val newNote = Note(
+                id = UUID.randomUUID().toString(),
+                folderId = folderId,
+                title = "New Note",
+                content = "",
+                createdAt = Instant.now().toString()
+            )
+            noteRepository.saveNote(newNote)
+            val updatedList = _uiState.value.notes + newNote
+            applyNoteToState(newNote, updatedList)
+            _uiState.update { it.copy(viewMode = NoteViewMode.EDITOR) }
         }
+    }
 
-        if (active != null && active.id != null) {
-            val toSave = active.copy(title = state.noteTitle, content = state.noteContent)
-            viewModelScope.launch { noteRepository.saveNote(toSave) }
-        }
+    fun updateTitle(title: String) {
+        _uiState.update { it.copy(noteTitle = title) }
+    }
+
+    fun updateContent(content: String) {
+        _uiState.update { it.copy(noteContent = content) }
+    }
+
+    fun saveCurrentNote() {
+        val currentId = _uiState.value.selectedNoteId ?: return
+        val currentNote = _uiState.value.notes.find { it.id == currentId } ?: return
+
+        val updatedNote = currentNote.copy(
+            title = _uiState.value.noteTitle.ifBlank { "Untitled Note" },
+            content = _uiState.value.noteContent,
+            simplifiedContent = _uiState.value.simplifiedContent,
+            flashcardsJson = if (_uiState.value.flashcards.isNotEmpty()) Json.encodeToString(_uiState.value.flashcards) else "",
+            mindmapJson = _uiState.value.mindmap?.let { Json.encodeToString(it) } ?: "",
+            quizJson = if (_uiState.value.quiz.isNotEmpty()) Json.encodeToString(_uiState.value.quiz) else ""
+        )
 
         viewModelScope.launch {
-            val newNote = noteRepository.createNote(folderId = folderId, title = "New Note", content = "")
-            _uiState.update { latest ->
-                val updatedList = latest.notes + newNote
-                latest.copy(
-                    notes = updatedList,
-                    currentNote = newNote,
-                    currentNoteIndex = updatedList.size - 1,
-                    noteTitle = newNote.title,
-                    noteContent = newNote.content,
-                    simplifiedText = null,
-                    flashcards = emptyList(),
-                    mindmapData = null,
-                    quizQuestions = emptyList(),
-                    aiMode = AiIslandMode.NONE,
-                    userNotification = "New note created"
-                )
-            }
+            noteRepository.saveNote(updatedNote)
+            val updatedList = _uiState.value.notes.map { if (it.id == currentId) updatedNote else it }
+            _uiState.update { it.copy(notes = updatedList, notificationMessage = "Saved!") }
         }
     }
 
     fun deleteCurrentNote() {
-        val state = _uiState.value
-        val target = state.currentNote ?: return
+        val currentId = _uiState.value.selectedNoteId ?: return
+        viewModelScope.launch {
+            noteRepository.deleteNote(currentId)
+            loadNotes()
+        }
+    }
+
+    fun toggleViewMode(mode: NoteViewMode) {
+        if (_uiState.value.viewMode == mode) {
+            _uiState.update { it.copy(viewMode = NoteViewMode.EDITOR) }
+            return
+        }
+
+        val content = _uiState.value.noteContent.trim()
+
+        when (mode) {
+            NoteViewMode.EDITOR -> {
+                _uiState.update { it.copy(viewMode = NoteViewMode.EDITOR) }
+            }
+            NoteViewMode.SIMPLIFY -> {
+                if (_uiState.value.simplifiedContent.isNotBlank()) {
+                    _uiState.update { it.copy(viewMode = NoteViewMode.SIMPLIFY) }
+                } else if (content.isNotBlank()) {
+                    generateSimplify()
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Add some note content first!") }
+                }
+            }
+            NoteViewMode.FLASHCARDS -> {
+                if (_uiState.value.flashcards.isNotEmpty()) {
+                    _uiState.update { it.copy(viewMode = NoteViewMode.FLASHCARDS) }
+                } else if (content.isNotBlank()) {
+                    generateFlashcards()
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Add some note content first!") }
+                }
+            }
+            NoteViewMode.MINDMAP -> {
+                if (_uiState.value.mindmap != null) {
+                    _uiState.update { it.copy(viewMode = NoteViewMode.MINDMAP) }
+                } else if (content.isNotBlank()) {
+                    generateMindmap()
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Add some note content first!") }
+                }
+            }
+            NoteViewMode.QUIZ -> {
+                if (_uiState.value.quiz.isNotEmpty()) {
+                    _uiState.update { it.copy(viewMode = NoteViewMode.QUIZ) }
+                } else if (content.isNotBlank()) {
+                    generateQuiz()
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Add some note content first!") }
+                }
+            }
+        }
+    }
+
+    fun generateSimplify() {
+        val content = _uiState.value.noteContent.trim()
+        if (content.isBlank()) return
 
         viewModelScope.launch {
-            target.id?.let { noteRepository.deleteNote(it) }
-            val remaining = state.notes.filterNot { it.id == target.id }
-            if (remaining.isNotEmpty()) {
-                val first = remaining.first()
-                val cached = noteAiCacheMap[first.id ?: first.title]
+            _uiState.update { it.copy(isLoading = true, loadingMessage = "Summarizing with Gemini AI...") }
+            val simplified = GeminiService.simplifyNote(content)
+
+            val currentId = _uiState.value.selectedNoteId
+            val currentNote = _uiState.value.notes.find { it.id == currentId }
+            if (currentNote != null) {
+                val updated = currentNote.copy(
+                    title = _uiState.value.noteTitle,
+                    content = _uiState.value.noteContent,
+                    simplifiedContent = simplified
+                )
+                noteRepository.saveNote(updated)
+                val updatedList = _uiState.value.notes.map { if (it.id == currentId) updated else it }
                 _uiState.update {
                     it.copy(
-                        notes = remaining,
-                        currentNote = first,
-                        currentNoteIndex = 0,
-                        noteTitle = first.title,
-                        noteContent = first.content,
-                        simplifiedText = cached?.simplifiedText,
-                        flashcards = cached?.flashcards ?: emptyList(),
-                        mindmapData = cached?.mindmapData,
-                        quizQuestions = cached?.quizQuestions ?: emptyList(),
-                        aiMode = AiIslandMode.NONE
+                        notes = updatedList,
+                        simplifiedContent = simplified,
+                        viewMode = NoteViewMode.SIMPLIFY,
+                        isLoading = false
                     )
                 }
             } else {
-                val fresh = noteRepository.createNote(folderId = folderId, title = "Untitled Note", content = "")
+                _uiState.update { it.copy(simplifiedContent = simplified, viewMode = NoteViewMode.SIMPLIFY, isLoading = false) }
+            }
+        }
+    }
+
+    fun generateFlashcards() {
+        val content = _uiState.value.noteContent.trim()
+        if (content.isBlank()) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, loadingMessage = "Generating Flashcards...") }
+            val cards = GeminiService.generateFlashcards(content)
+            val jsonStr = Json.encodeToString(cards)
+
+            val currentId = _uiState.value.selectedNoteId
+            val currentNote = _uiState.value.notes.find { it.id == currentId }
+            if (currentNote != null) {
+                val updated = currentNote.copy(
+                    title = _uiState.value.noteTitle,
+                    content = _uiState.value.noteContent,
+                    flashcardsJson = jsonStr
+                )
+                noteRepository.saveNote(updated)
+                val updatedList = _uiState.value.notes.map { if (it.id == currentId) updated else it }
                 _uiState.update {
                     it.copy(
-                        notes = listOf(fresh),
-                        currentNote = fresh,
-                        currentNoteIndex = 0,
-                        noteTitle = fresh.title,
-                        noteContent = fresh.content,
-                        simplifiedText = null,
-                        flashcards = emptyList(),
-                        mindmapData = null,
-                        quizQuestions = emptyList(),
-                        aiMode = AiIslandMode.NONE
+                        notes = updatedList,
+                        flashcards = cards,
+                        viewMode = NoteViewMode.FLASHCARDS,
+                        isLoading = false
                     )
                 }
+            } else {
+                _uiState.update { it.copy(flashcards = cards, viewMode = NoteViewMode.FLASHCARDS, isLoading = false) }
             }
         }
     }
 
-    fun dismissAiIsland() {
-        _uiState.update { it.copy(aiMode = AiIslandMode.NONE) }
-    }
-
-    fun generateSimplifiedNotes(forceRegenerate: Boolean = false) {
-        val content = _uiState.value.noteContent
+    fun generateMindmap() {
+        val content = _uiState.value.noteContent.trim()
         if (content.isBlank()) return
 
-        val cached = noteAiCacheMap[getActiveCacheKey()]?.simplifiedText
-        if (!forceRegenerate && !cached.isNullOrBlank()) {
-            _uiState.update { it.copy(simplifiedText = cached, aiMode = AiIslandMode.SIMPLIFY) }
-            return
-        }
-
-        _uiState.update { it.copy(aiMode = AiIslandMode.SIMPLIFY, isAiProcessing = true) }
         viewModelScope.launch {
-            val simplified = GeminiService.simplifyNote(content)
-            updateActiveCache { it.copy(simplifiedText = simplified) }
-            _uiState.update {
-                it.copy(
-                    simplifiedText = simplified,
-                    isAiProcessing = false
+            _uiState.update { it.copy(isLoading = true, loadingMessage = "Building Visual Mindmap...") }
+            val map = GeminiService.generateMindmap(content)
+            val jsonStr = Json.encodeToString(map)
+
+            val currentId = _uiState.value.selectedNoteId
+            val currentNote = _uiState.value.notes.find { it.id == currentId }
+            if (currentNote != null) {
+                val updated = currentNote.copy(
+                    title = _uiState.value.noteTitle,
+                    content = _uiState.value.noteContent,
+                    mindmapJson = jsonStr
                 )
+                noteRepository.saveNote(updated)
+                val updatedList = _uiState.value.notes.map { if (it.id == currentId) updated else it }
+                _uiState.update {
+                    it.copy(
+                        notes = updatedList,
+                        mindmap = map,
+                        viewMode = NoteViewMode.MINDMAP,
+                        isLoading = false
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(mindmap = map, viewMode = NoteViewMode.MINDMAP, isLoading = false) }
             }
         }
     }
 
-    fun appendSummaryToNoteContent() {
-        val summary = _uiState.value.simplifiedText ?: return
-        val currentContent = _uiState.value.noteContent
-        val appended = if (currentContent.isBlank()) {
-            "### AI Summary\n$summary"
-        } else {
-            "$currentContent\n\n### AI Summary\n$summary"
-        }
-        updateContent(appended)
-        saveCurrentNote()
-        _uiState.update { it.copy(userNotification = "Summary appended and saved to note!") }
-    }
-
-    fun generateFlashcards(forceRegenerate: Boolean = false) {
-        val content = _uiState.value.noteContent
+    fun generateQuiz() {
+        val content = _uiState.value.noteContent.trim()
         if (content.isBlank()) return
 
-        val cached = noteAiCacheMap[getActiveCacheKey()]?.flashcards
-        if (!forceRegenerate && !cached.isNullOrEmpty()) {
-            _uiState.update { it.copy(flashcards = cached, aiMode = AiIslandMode.FLASHCARDS) }
-            return
-        }
-
-        _uiState.update { it.copy(aiMode = AiIslandMode.FLASHCARDS, isAiProcessing = true) }
         viewModelScope.launch {
-            val cards = GeminiService.generateFlashcards(content)
-            updateActiveCache { it.copy(flashcards = cards) }
-            _uiState.update {
-                it.copy(
-                    flashcards = cards,
-                    currentFlashcardIndex = 0,
-                    isFlashcardFlipped = false,
-                    isAiProcessing = false
+            _uiState.update { it.copy(isLoading = true, loadingMessage = "Creating Interactive Quiz...") }
+            val quizQuestions = GeminiService.generateQuiz(content)
+            val jsonStr = Json.encodeToString(quizQuestions)
+
+            val currentId = _uiState.value.selectedNoteId
+            val currentNote = _uiState.value.notes.find { it.id == currentId }
+            if (currentNote != null) {
+                val updated = currentNote.copy(
+                    title = _uiState.value.noteTitle,
+                    content = _uiState.value.noteContent,
+                    quizJson = jsonStr
                 )
+                noteRepository.saveNote(updated)
+                val updatedList = _uiState.value.notes.map { if (it.id == currentId) updated else it }
+                _uiState.update {
+                    it.copy(
+                        notes = updatedList,
+                        quiz = quizQuestions,
+                        viewMode = NoteViewMode.QUIZ,
+                        isLoading = false
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(quiz = quizQuestions, viewMode = NoteViewMode.QUIZ, isLoading = false) }
             }
         }
     }
 
-    fun generateMindmap(forceRegenerate: Boolean = false) {
-        val content = _uiState.value.noteContent
-        if (content.isBlank()) return
+    fun deleteCurrentTool() {
+        val currentId = _uiState.value.selectedNoteId ?: return
+        val currentNote = _uiState.value.notes.find { it.id == currentId } ?: return
 
-        val cached = noteAiCacheMap[getActiveCacheKey()]?.mindmapData
-        if (!forceRegenerate && cached != null) {
-            _uiState.update { it.copy(mindmapData = cached, aiMode = AiIslandMode.MINDMAP) }
-            return
+        val updated = when (_uiState.value.viewMode) {
+            NoteViewMode.SIMPLIFY -> currentNote.copy(simplifiedContent = "")
+            NoteViewMode.FLASHCARDS -> currentNote.copy(flashcardsJson = "")
+            NoteViewMode.MINDMAP -> currentNote.copy(mindmapJson = "")
+            NoteViewMode.QUIZ -> currentNote.copy(quizJson = "")
+            NoteViewMode.EDITOR -> currentNote
         }
 
-        _uiState.update { it.copy(aiMode = AiIslandMode.MINDMAP, isAiProcessing = true) }
         viewModelScope.launch {
-            val mapData = GeminiService.generateMindmap(content)
-            updateActiveCache { it.copy(mindmapData = mapData) }
+            noteRepository.saveNote(updated)
+            val updatedList = _uiState.value.notes.map { if (it.id == currentId) updated else it }
             _uiState.update {
                 it.copy(
-                    mindmapData = mapData,
-                    mindmap = mapData,
-                    isAiProcessing = false
+                    notes = updatedList,
+                    simplifiedContent = if (it.viewMode == NoteViewMode.SIMPLIFY) "" else it.simplifiedContent,
+                    flashcards = if (it.viewMode == NoteViewMode.FLASHCARDS) emptyList() else it.flashcards,
+                    mindmap = if (it.viewMode == NoteViewMode.MINDMAP) null else it.mindmap,
+                    quiz = if (it.viewMode == NoteViewMode.QUIZ) emptyList() else it.quiz,
+                    viewMode = NoteViewMode.EDITOR,
+                    notificationMessage = "Item deleted."
                 )
             }
         }
     }
 
-    fun generateQuiz(forceRegenerate: Boolean = false) {
-        val content = _uiState.value.noteContent
-        if (content.isBlank()) return
-
-        val cached = noteAiCacheMap[getActiveCacheKey()]?.quizQuestions
-        if (!forceRegenerate && !cached.isNullOrEmpty()) {
-            _uiState.update { it.copy(quizQuestions = cached, aiMode = AiIslandMode.QUIZ) }
-            return
-        }
-
-        _uiState.update { it.copy(aiMode = AiIslandMode.QUIZ, isAiProcessing = true) }
-        viewModelScope.launch {
-            val questions = GeminiService.generateQuiz(content)
-            updateActiveCache { it.copy(quizQuestions = questions) }
-            _uiState.update {
-                it.copy(
-                    quizQuestions = questions,
-                    currentQuizIndex = 0,
-                    selectedQuizAnswer = null,
-                    selectedQuizOption = null,
-                    isAnswerSubmitted = false,
-                    quizScore = 0,
-                    isQuizFinished = false,
-                    isAiProcessing = false
-                )
-            }
-        }
-    }
-
-    fun selectQuizAnswer(answer: String) {
-        val state = _uiState.value
-        if (state.isAnswerSubmitted) return
-        val currentQ = state.quizQuestions.getOrNull(state.currentQuizIndex)
-        val optionIndex = currentQ?.options?.indexOf(answer)
-        _uiState.update {
-            it.copy(
-                selectedQuizAnswer = answer,
-                selectedQuizOption = if (optionIndex != null && optionIndex >= 0) optionIndex else null
-            )
-        }
-    }
-
-    fun submitQuizAnswer() {
-        val state = _uiState.value
-        if (state.selectedQuizAnswer == null || state.isAnswerSubmitted) return
-        val currentQ = state.quizQuestions.getOrNull(state.currentQuizIndex) ?: return
-        val isCorrect = currentQ.correctAnswer.equals(state.selectedQuizAnswer, ignoreCase = true)
-
-        _uiState.update {
-            it.copy(
-                isAnswerSubmitted = true,
-                quizScore = if (isCorrect) it.quizScore + 1 else it.quizScore
-            )
-        }
-    }
-
-    fun nextQuizQuestion() {
-        val state = _uiState.value
-        val nextIdx = state.currentQuizIndex + 1
-        if (nextIdx < state.quizQuestions.size) {
-            _uiState.update {
-                it.copy(
-                    currentQuizIndex = nextIdx,
-                    selectedQuizAnswer = null,
-                    selectedQuizOption = null,
-                    isAnswerSubmitted = false
-                )
-            }
-        } else {
-            _uiState.update { it.copy(isQuizFinished = true, isAnswerSubmitted = false) }
-        }
-    }
-
-    fun resetQuiz() {
-        _uiState.update {
-            it.copy(
-                currentQuizIndex = 0,
-                selectedQuizAnswer = null,
-                selectedQuizOption = null,
-                isAnswerSubmitted = false,
-                quizScore = 0,
-                isQuizFinished = false
-            )
-        }
-    }
-
-    fun scheduleNoteTask(title: String = "", durationMinutes: Int = 30) {
+    fun scheduleStudySession(
+        title: String,
+        startTime: String,
+        endTime: String,
+        energyLevel: String,
+        colorHex: String,
+        date: LocalDate = LocalDate.now()
+    ) {
         viewModelScope.launch {
             try {
-                val now = LocalTime.now()
-                val formatter = DateTimeFormatter.ofPattern("HH:mm")
-                val start = now.format(formatter)
-                val end = now.plusMinutes(durationMinutes.toLong()).format(formatter)
-                val taskTitle = title.ifBlank { "Study: ${_uiState.value.noteTitle.ifBlank { "Note Review" }}" }
-
                 val task = ScheduleTask(
-                    title = taskTitle,
-                    startTime = start,
-                    endTime = end,
-                    energyLevel = "Medium",
-                    colorHex = "#3B82F6",
-                    createdAt = "${LocalDate.now()}T${start}:00Z"
+                    title = title,
+                    startTime = startTime,
+                    endTime = endTime,
+                    energyLevel = energyLevel,
+                    taskType = "study",
+                    colorHex = colorHex,
+                    createdAt = "${date}T${startTime}:00Z"
                 )
                 scheduleRepository.createTask(task)
-                _uiState.update { it.copy(userNotification = "Scheduled task to timeline!") }
+                _uiState.update { it.copy(notificationMessage = "Scheduled task to Timeline!") }
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to schedule task") }
+                _uiState.update { it.copy(errorMessage = "Failed to schedule task: ${e.message}") }
             }
         }
     }
 
     fun clearNotification() {
-        _uiState.update {
-            it.copy(
-                userNotification = null,
-                errorMessage = null,
-                feedbackMessage = null
-            )
-        }
+        _uiState.update { it.copy(notificationMessage = null, errorMessage = null) }
     }
 }
