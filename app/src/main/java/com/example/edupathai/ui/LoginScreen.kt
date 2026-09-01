@@ -70,6 +70,7 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0B0F19))
+            .statusBarsPadding()
             .padding(20.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -324,7 +325,7 @@ fun LoginScreen(
                                                 id = newUserId,
                                                 username = fullName.trim(),
                                                 email = trimmedEmail,
-                                                bio = "Student at TAR UMT"
+                                                bio = "Student Profile"
                                             )
                                             SupabaseProvider.client.from("profiles").upsert(profile)
                                         } catch (_: Exception) {}
@@ -342,12 +343,21 @@ fun LoginScreen(
                                             this.password = trimmedPassword
                                         }
                                         onLoginSuccess()
-                                    } catch (_: Exception) {
-                                        Toast.makeText(
-                                            context,
-                                            "Account created! Please check your email to verify before signing in.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                    } catch (signInErr: Exception) {
+                                        val msg = signInErr.message.orEmpty()
+                                        if (msg.contains("Email not confirmed", ignoreCase = true)) {
+                                            Toast.makeText(
+                                                context,
+                                                "Registration complete! If email confirmation is enabled in Supabase, please verify or turn off 'Confirm email' in Supabase Auth settings.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Account created! Please Sign In with your password.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
                                         isRegistering = false
                                     }
                                 } else {
@@ -372,10 +382,22 @@ fun LoginScreen(
                                 }
                             } catch (e: Exception) {
                                 val errorStr = e.message.orEmpty()
-                                if (errorStr.contains("429") || errorStr.contains("rate", ignoreCase = true) || errorStr.contains("too many", ignoreCase = true)) {
+                                if (errorStr.contains("Email not confirmed", ignoreCase = true)) {
                                     Toast.makeText(
                                         context,
-                                        "Email rate limit exceeded (Error 429). If your account was already registered, switch to 'Sign In' directly.",
+                                        "Email not confirmed. Please confirm the user in your Supabase Dashboard or turn off 'Confirm email' in Supabase Auth Providers.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else if (errorStr.contains("Invalid login credentials", ignoreCase = true)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Invalid email or password. Please check your credentials.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else if (errorStr.contains("429") || errorStr.contains("rate", ignoreCase = true) || errorStr.contains("too many", ignoreCase = true)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Email rate limit exceeded (Error 429). Please try again later or sign in directly.",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 } else if (errorStr.contains("already registered", ignoreCase = true) || errorStr.contains("User already exists", ignoreCase = true)) {

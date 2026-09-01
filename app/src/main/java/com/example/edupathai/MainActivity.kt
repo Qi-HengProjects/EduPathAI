@@ -5,8 +5,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -29,7 +35,10 @@ import com.example.edupathai.ui.schedule.DailyTimelineScreen
 import com.example.edupathai.ui.schedule.ScheduleViewModel
 import com.example.edupathai.ui.theme.EduPathAITheme
 import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.gotrue.providers.builtin.Email
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,10 +57,10 @@ fun MainAppNavigator() {
     val coroutineScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("edupath_auth_prefs", Context.MODE_PRIVATE) }
 
-    var isLoggedIn by rememberSaveable { mutableStateOf(true) }
-    val currentUserId = remember { SupabaseProvider.getLocalUserId() }
+    var isCheckingAuth by rememberSaveable { mutableStateOf(true) }
+    var isLoggedIn by rememberSaveable { mutableStateOf(false) }
+    var currentUserId by rememberSaveable { mutableStateOf("") }
 
-    // Shared ScheduleViewModel so Dashboard and Schedule Timeline are always 100% synchronized
     val scheduleViewModel: ScheduleViewModel = viewModel()
 
     var currentDestination by remember { mutableStateOf(AppDestination.DASHBOARD) }
@@ -63,9 +72,58 @@ fun MainAppNavigator() {
     var selectedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSessionTitle by rememberSaveable { mutableStateOf<String?>(null) }
 
+    // Check Auth State on launch
+    LaunchedEffect(Unit) {
+        try {
+            var session = SupabaseProvider.client.auth.currentSessionOrNull()
+            val rememberMe = prefs.getBoolean("remember_me", false)
+            val savedEmail = prefs.getString("saved_email", "") ?: ""
+            val savedPassword = prefs.getString("saved_password", "") ?: ""
+
+            // Auto-login only if remember_me is enabled with valid saved credentials
+            if (session == null && rememberMe && savedEmail.isNotBlank() && savedPassword.isNotBlank()) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        SupabaseProvider.client.auth.signInWith(Email) {
+                            this.email = savedEmail.trim()
+                            this.password = savedPassword
+                        }
+                    } catch (_: Exception) {}
+                }
+                session = SupabaseProvider.client.auth.currentSessionOrNull()
+            }
+
+            if (session != null) {
+                val uid = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: SupabaseProvider.getLocalUserId()
+                currentUserId = uid
+                isLoggedIn = true
+            } else {
+                isLoggedIn = false
+            }
+        } catch (_: Exception) {
+            isLoggedIn = false
+        } finally {
+            isCheckingAuth = false
+        }
+    }
+
+    if (isCheckingAuth) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0B0F19)),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color(0xFF3B82F6))
+        }
+        return
+    }
+
     if (!isLoggedIn) {
         LoginScreen(
             onLoginSuccess = {
+                val uid = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: SupabaseProvider.getLocalUserId()
+                currentUserId = uid
                 isLoggedIn = true
             }
         )
@@ -79,15 +137,19 @@ fun MainAppNavigator() {
             onBack = { showSettings = false },
             onLoggedOut = {
                 coroutineScope.launch {
-                    try {
-                        SupabaseProvider.client.auth.signOut()
-                    } catch (_: Exception) {}
+                    withContext(Dispatchers.IO) {
+                        try {
+                            SupabaseProvider.client.auth.signOut()
+                        } catch (_: Exception) {}
+                    }
+                    // Explicitly wipe remembered credentials
                     prefs.edit().apply {
                         putBoolean("remember_me", false)
                         remove("saved_email")
                         remove("saved_password")
                         apply()
                     }
+                    currentUserId = ""
                     isLoggedIn = false
                     showSettings = false
                 }
